@@ -1,0 +1,58 @@
+{
+  "tool": "github",
+  "actions": {
+    "pr": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "base": { "type": "string" },
+        "head": { "type": "string" },
+        "draft": { "type": "boolean" },
+        "labels": { "type": "array", "items": { "type": "string" } },
+        "reviewers": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+    ,
+    "pr_status": {
+      "type": "object",
+      "properties": {}
+    },
+    "pr_merge": {
+      "type": "object",
+      "required": ["pr"],
+      "properties": {
+        "pr": { "type": "string" },
+        "method": { "type": "string" }
+      }
+    },
+    "pr_view": {
+      "type": "object",
+      "required": ["pr"],
+      "properties": {
+        "pr": { "type": "string" }
+      }
+    },
+    "branch_create": {
+      "type": "object",
+      "required": ["repo", "branch", "sha"],
+      "properties": {
+        "repo": { "type": "string" },
+        "branch": { "type": "string" },
+        "sha": { "type": "string" }
+      }
+    },
+    "commit_status": {
+      "type": "object",
+      "required": ["repo", "sha", "state"],
+      "properties": {
+        "repo": { "type": "string" },
+        "sha": { "type": "string" },
+        "state": { "type": "string" },
+        "context": { "type": "string" },
+        "description": { "type": "string" },
+        "target_url": { "type": "string" }
+      }
+    }
+  }
+}

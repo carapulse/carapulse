@@ -1,0 +1,7 @@
+.git/
+e2e/workspace/
+*.md
+docs/
+scripts/
+**/*_test.go
+

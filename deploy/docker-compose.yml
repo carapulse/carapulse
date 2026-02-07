@@ -1,0 +1,143 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: carapulse
+      POSTGRES_PASSWORD: carapulse
+      POSTGRES_DB: carapulse
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U carapulse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  temporal:
+    image: temporalio/auto-setup:1.22.4
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: carapulse
+      POSTGRES_PWD: carapulse
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233"
+
+  temporal-ui:
+    image: temporalio/ui:2.22.3
+    depends_on:
+      temporal:
+        condition: service_started
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:8088
+    ports:
+      - "8088:8080"
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: carapulse
+      MINIO_ROOT_PASSWORD: carapulse
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  opa:
+    image: openpolicyagent/opa:0.62.1
+    command: ["run","--server","--addr","0.0.0.0:8181","--bundle","/policies"]
+    ports:
+      - "8181:8181"
+    volumes:
+      - ../policies:/policies:ro
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/gateway.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./config.compose.json:/etc/carapulse/config.json:ro
+    entrypoint: ["/usr/local/bin/migrate"]
+    command:
+      - "-dsn"
+      - "postgres://carapulse:carapulse@postgres:5432/carapulse?sslmode=disable"
+      - "-action"
+      - "up"
+      - "-embed"
+    restart: "no"
+
+  tool-router:
+    build:
+      context: ..
+      dockerfile: docker/tool-router.Dockerfile
+    depends_on:
+      opa:
+        condition: service_started
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./config.compose.json:/etc/carapulse/config.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: docker/orchestrator.Dockerfile
+    depends_on:
+      temporal:
+        condition: service_started
+      tool-router:
+        condition: service_started
+    volumes:
+      - ./config.compose.json:/etc/carapulse/config.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./workspace:/workspace
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/gateway.Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_started
+      opa:
+        condition: service_started
+      tool-router:
+        condition: service_started
+    ports:
+      - "8080:8080"
+      - "8082:8082"
+    volumes:
+      - ./config.compose.json:/etc/carapulse/config.json:ro
+      - ./workspace:/workspace
+
+  agent:
+    profiles: ["chatops"]
+    build:
+      context: ..
+      dockerfile: docker/agent.Dockerfile
+    depends_on:
+      gateway:
+        condition: service_started
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./config.compose.chatops.json:/etc/carapulse/config.json:ro
+
+volumes:
+  postgres-data:
+  minio-data:

@@ -1,0 +1,17 @@
+{{- if .Values.agent.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "carapulse.fullname" . }}-agent
+  labels:
+    {{- include "carapulse.componentLabels" (dict "context" . "component" "agent") | nindent 4 }}
+spec:
+  type: {{ .Values.agent.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.agent.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "carapulse.selectorLabels" (dict "context" . "component" "agent") | nindent 4 }}
+{{- end }}

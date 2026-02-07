@@ -1,0 +1,6 @@
+apiVersion: v2
+name: carapulse
+description: Autonomous DevOps/SRE assistant with approval gates, policy enforcement, and audit trails
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

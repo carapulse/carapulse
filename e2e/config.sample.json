@@ -1,0 +1,80 @@
+{
+  "gateway": {
+    "http_addr": ":8080",
+    "ws_addr": ":8082",
+    "enable_event_loop": true,
+    "event_loop_sources": ["alertmanager", "argocd", "git", "k8s"],
+    "session_required": false
+  },
+  "tool_router": {
+    "http_addr": ":8081",
+    "base_url": "http://127.0.0.1:8081"
+  },
+  "orchestrator": {
+    "temporal_addr": "127.0.0.1:7233",
+    "namespace": "default",
+    "task_queue": "carapulse"
+  },
+  "storage": {
+    "postgres_dsn": "postgres://carapulse:carapulse@127.0.0.1:5432/carapulse?sslmode=disable",
+    "object_store": {
+      "endpoint": "http://127.0.0.1:9000",
+      "bucket": "carapulse"
+    },
+    "workspace_dir": "./e2e/workspace"
+  },
+  "sandbox": {
+    "enabled": false,
+    "enforce": false,
+    "require_on_write": false,
+    "require_egress_allowlist": false,
+    "egress_allowlist": ["127.0.0.1:8080", "127.0.0.1:8081", "127.0.0.1:9090", "127.0.0.1:9093", "127.0.0.1:3000", "127.0.0.1:3200", "127.0.0.1:8083"]
+  },
+  "context": {
+    "enabled": true,
+    "poll_interval_secs": 60,
+    "watch_interval_secs": 30,
+    "snapshot_interval_secs": 60,
+    "watch_timeout_secs": 30,
+    "watch_send_initial_events": true,
+    "watch_allow_bookmarks": true,
+    "k8s_namespaces": ["default", "e2e"],
+    "helm_namespaces": ["e2e"],
+    "k8s_resources": ["deployments", "pods", "services", "nodes", "events"],
+    "labels": {
+      "tenant_id": "e2e",
+      "environment": "local",
+      "cluster_id": "kind",
+      "namespace": "e2e"
+    },
+    "tenant_id": "e2e",
+    "environment": "local",
+    "cluster_id": "kind",
+    "namespace": "e2e",
+    "aws_account_id": "000000000000",
+    "region": "local",
+    "argocd_project": "default",
+    "grafana_org_id": "1",
+    "services": []
+  },
+  "connectors": {
+    "prometheus": {
+      "addr": "http://127.0.0.1:9090"
+    },
+    "alertmanager": {
+      "addr": "http://127.0.0.1:9093"
+    },
+    "grafana": {
+      "addr": "http://127.0.0.1:3000",
+      "token": "REPLACE_GRAFANA_TOKEN",
+      "org_id": "1"
+    },
+    "tempo": {
+      "addr": "http://127.0.0.1:3200"
+    },
+    "argocd": {
+      "addr": "https://127.0.0.1:8083",
+      "token": "REPLACE_ARGOCD_TOKEN"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "carapulse.fullname" . }}-orchestrator
+  labels:
+    {{- include "carapulse.componentLabels" (dict "context" . "component" "orchestrator") | nindent 4 }}
+spec:
+  replicas: {{ .Values.orchestrator.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "carapulse.selectorLabels" (dict "context" . "component" "orchestrator") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ .Values.config | toJson | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "carapulse.componentLabels" (dict "context" . "component" "orchestrator") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "carapulse.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: orchestrator
+          image: {{ include "carapulse.image" (dict "global" .Values.global "image" .Values.orchestrator.image "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args:
+            - "-config"
+            - "/etc/carapulse/config.json"
+          resources:
+            {{- toYaml .Values.orchestrator.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/carapulse/config.json
+              subPath: config.json
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ include "carapulse.fullname" . }}-config
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,12 @@
+{
+  "tool": "linear",
+  "actions": {
+    "create": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    }
+  }
+}

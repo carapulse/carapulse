@@ -1,0 +1,22 @@
+{
+  "gateway": {
+    "http_addr": ":8080"
+  },
+  "policy": {
+    "opa_url": "http://opa:8181",
+    "policy_package": "policy.assistant.v1"
+  },
+  "orchestrator": {
+    "temporal_addr": "temporal:7233"
+  },
+  "storage": {
+    "postgres_dsn": "postgres://carapulse:carapulse@postgres:5432/carapulse?sslmode=disable"
+  },
+  "chatops": {
+    "slack_bot_token": "REPLACE",
+    "slack_signing_secret": "REPLACE",
+    "gateway_url": "http://gateway:8080",
+    "gateway_token": ""
+  }
+}
+

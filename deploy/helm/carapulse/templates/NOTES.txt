@@ -1,0 +1,24 @@
+Carapulse has been deployed to namespace {{ .Release.Namespace }}.
+
+Gateway:
+  kubectl port-forward svc/{{ include "carapulse.fullname" . }}-gateway 8080:8080 -n {{ .Release.Namespace }}
+  API: http://localhost:8080/v1/plans
+  Health: http://localhost:8080/healthz
+
+Tool Router:
+  kubectl port-forward svc/{{ include "carapulse.fullname" . }}-tool-router 8081:8081 -n {{ .Release.Namespace }}
+
+{{- if .Values.agent.enabled }}
+Agent (ChatOps):
+  kubectl port-forward svc/{{ include "carapulse.fullname" . }}-agent 8090:8090 -n {{ .Release.Namespace }}
+{{- end }}
+
+{{- if .Values.gateway.ingress.enabled }}
+Ingress is enabled. Access the API at:
+  {{- range .Values.gateway.ingress.hosts }}
+  http{{ if $.Values.gateway.ingress.tls }}s{{ end }}://{{ .host }}
+  {{- end }}
+{{- end }}
+
+To verify the deployment:
+  kubectl get pods -l app.kubernetes.io/part-of=carapulse -n {{ .Release.Namespace }}

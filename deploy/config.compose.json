@@ -1,0 +1,38 @@
+{
+  "gateway": {
+    "http_addr": ":8080",
+    "ws_addr": ":8082",
+    "enable_event_loop": false,
+    "session_required": false
+  },
+  "tool_router": {
+    "http_addr": ":8081",
+    "base_url": "http://tool-router:8081"
+  },
+  "policy": {
+    "opa_url": "http://opa:8181",
+    "policy_package": "policy.assistant.v1",
+    "fail_open_reads": false
+  },
+  "orchestrator": {
+    "temporal_addr": "temporal:7233",
+    "namespace": "default",
+    "task_queue": "carapulse",
+    "health_addr": ":8085"
+  },
+  "storage": {
+    "postgres_dsn": "postgres://carapulse:carapulse@postgres:5432/carapulse?sslmode=disable",
+    "object_store": {
+      "endpoint": "http://minio:9000",
+      "bucket": "carapulse"
+    },
+    "workspace_dir": "/workspace"
+  },
+  "sandbox": {
+    "enabled": false,
+    "enforce": false,
+    "require_on_write": false,
+    "require_egress_allowlist": false,
+    "egress_allowlist": []
+  }
+}

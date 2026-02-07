@@ -1,0 +1,69 @@
+{
+  "tool": "argocd",
+  "actions": {
+    "sync": {
+      "type": "object",
+      "required": ["app"],
+      "properties": {
+        "app": { "type": "string" }
+      }
+    },
+    "sync-dry-run": {
+      "type": "object",
+      "required": ["app"],
+      "properties": {
+        "app": { "type": "string" }
+      }
+    },
+    "sync-preview": {
+      "type": "object",
+      "required": ["app"],
+      "properties": {
+        "app": { "type": "string" }
+      }
+    },
+    "wait": {
+      "type": "object",
+      "required": ["app"],
+      "properties": {
+        "app": { "type": "string" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "required": ["app"],
+      "properties": {
+        "app": { "type": "string" },
+        "revision": { "type": "string" }
+      }
+    },
+    "status": {
+      "type": "object",
+      "required": ["app"],
+      "properties": {
+        "app": { "type": "string" }
+      }
+    },
+    "list": {
+      "type": "object",
+      "properties": {}
+    },
+    "project_token_create": {
+      "type": "object",
+      "required": ["project", "role"],
+      "properties": {
+        "project": { "type": "string" },
+        "role": { "type": "string" }
+      }
+    },
+    "project_token_delete": {
+      "type": "object",
+      "required": ["project", "role", "token_id"],
+      "properties": {
+        "project": { "type": "string" },
+        "role": { "type": "string" },
+        "token_id": { "type": "string" }
+      }
+    }
+  }
+}

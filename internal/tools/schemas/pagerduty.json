@@ -1,0 +1,12 @@
+{
+  "tool": "pagerduty",
+  "actions": {
+    "create": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "severity": { "type": "string" }
+      }
+    }
+  }
+}

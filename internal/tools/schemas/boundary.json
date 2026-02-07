@@ -1,0 +1,32 @@
+{
+  "tool": "boundary",
+  "actions": {
+    "authenticate": {
+      "type": "object",
+      "properties": {
+        "auth_method_id": { "type": "string" },
+        "login_name": { "type": "string" },
+        "password": { "type": "string" }
+      }
+    },
+    "session_open": {
+      "type": "object",
+      "properties": {
+        "target_id": { "type": "string" },
+        "duration": { "type": "string" }
+      }
+    },
+    "session_close": {
+      "type": "object",
+      "properties": {
+        "session_id": { "type": "string" }
+      }
+    },
+    "*": {
+      "type": "object",
+      "properties": {
+        "args": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

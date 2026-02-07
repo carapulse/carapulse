@@ -1,0 +1,44 @@
+{
+  "tool": "kubectl",
+  "actions": {
+    "scale": {
+      "type": "object",
+      "required": ["resource", "replicas"],
+      "properties": {
+        "resource": { "type": "string" },
+        "replicas": { "type": "integer", "minimum": 0 },
+        "current_replicas": { "type": "integer", "minimum": 0 },
+        "resource_version": { "type": "string" }
+      }
+    },
+    "rollout-status": {
+      "type": "object",
+      "required": ["resource"],
+      "properties": {
+        "resource": { "type": "string" }
+      }
+    },
+    "get": {
+      "type": "object",
+      "required": ["resource"],
+      "properties": {
+        "resource": { "type": "string" },
+        "namespace": { "type": "string" },
+        "selector": { "type": "string" }
+      }
+    },
+    "watch": {
+      "type": "object",
+      "required": ["resource"],
+      "properties": {
+        "resource": { "type": "string" },
+        "namespace": { "type": "string" },
+        "resource_version": { "type": "string" },
+        "allow_bookmarks": { "type": "boolean" },
+        "send_initial_events": { "type": "boolean" },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "selector": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+-- +goose Up
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS session_id TEXT;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS meta_json JSONB;
+
+-- +goose Down
+ALTER TABLE plans DROP COLUMN IF EXISTS meta_json;
+ALTER TABLE plans DROP COLUMN IF EXISTS session_id;

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "carapulse.fullname" . }}-gateway
+  labels:
+    {{- include "carapulse.componentLabels" (dict "context" . "component" "gateway") | nindent 4 }}
+spec:
+  type: {{ .Values.gateway.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.gateway.service.port }}
+      targetPort: http
+      protocol: TCP
+    - name: canvas
+      port: {{ .Values.gateway.service.canvasPort }}
+      targetPort: canvas
+      protocol: TCP
+  selector:
+    {{- include "carapulse.selectorLabels" (dict "context" . "component" "gateway") | nindent 4 }}

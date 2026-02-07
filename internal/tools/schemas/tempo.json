@@ -1,0 +1,26 @@
+{
+  "tool": "tempo",
+  "actions": {
+    "query": {
+      "type": "object",
+      "required": ["query"],
+      "properties": {
+        "query": { "type": "string" }
+      }
+    },
+    "traceql": {
+      "type": "object",
+      "required": ["query"],
+      "properties": {
+        "query": { "type": "string" }
+      }
+    },
+    "trace_by_id": {
+      "type": "object",
+      "required": ["trace_id"],
+      "properties": {
+        "trace_id": { "type": "string" }
+      }
+    }
+  }
+}

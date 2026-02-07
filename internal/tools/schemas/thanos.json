@@ -1,0 +1,24 @@
+{
+  "tool": "thanos",
+  "actions": {
+    "query": {
+      "type": "object",
+      "required": ["query"],
+      "properties": {
+        "query": { "type": "string" }
+      }
+    },
+    "query_range": {
+      "type": "object",
+      "required": ["query", "start", "end", "step"],
+      "properties": {
+        "query": { "type": "string" },
+        "start": { "type": "string" },
+        "end": { "type": "string" },
+        "step": { "type": "string" },
+        "dedup": { "type": "boolean" },
+        "max_source_resolution": { "type": "string" }
+      }
+    }
+  }
+}

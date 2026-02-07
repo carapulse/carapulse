@@ -1,0 +1,52 @@
+{
+  "tool": "vault",
+  "actions": {
+    "login_k8s": {
+      "type": "object",
+      "properties": {
+        "role": { "type": "string" },
+        "jwt": { "type": "string" }
+      }
+    },
+    "login_approle": {
+      "type": "object",
+      "properties": {
+        "role_id": { "type": "string" },
+        "secret_id": { "type": "string" }
+      }
+    },
+    "renew": {
+      "type": "object",
+      "properties": {
+        "lease_id": { "type": "string" }
+      }
+    },
+    "revoke": {
+      "type": "object",
+      "properties": {
+        "lease_id": { "type": "string" }
+      }
+    },
+    "health": {
+      "type": "object",
+      "properties": {}
+    },
+    "audit_enable": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "token_renew": {
+      "type": "object",
+      "properties": {}
+    },
+    "*": {
+      "type": "object",
+      "properties": {
+        "args": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "tool": "git",
+  "actions": {
+    "branch": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "base": { "type": "string" }
+      }
+    },
+    "add": {
+      "type": "object",
+      "required": ["paths"],
+      "properties": {
+        "paths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "commit": {
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "message": { "type": "string" },
+        "all": { "type": "boolean" },
+        "paths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "push": {
+      "type": "object",
+      "properties": {
+        "remote": { "type": "string" },
+        "branch": { "type": "string" },
+        "set_upstream": { "type": "boolean" }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {}
+    },
+    "checkout": {
+      "type": "object",
+      "required": ["ref"],
+      "properties": {
+        "ref": { "type": "string" }
+      }
+    },
+    "merge": {
+      "type": "object",
+      "required": ["ref"],
+      "properties": {
+        "ref": { "type": "string" }
+      }
+    },
+    "fetch": {
+      "type": "object",
+      "properties": {
+        "remote": { "type": "string" },
+        "ref": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Mondays at 6 AM UTC
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: carapulse
+          POSTGRES_PASSWORD: carapulse
+          POSTGRES_DB: carapulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Download dependencies
+        run: go mod download
+      - name: Run migrations
+        run: go run ./cmd/migrate -dsn "postgres://carapulse:carapulse@localhost:5432/carapulse?sslmode=disable" -action up -embed
+      - name: Build services
+        run: |
+          CGO_ENABLED=0 go build -o bin/gateway ./cmd/gateway
+          CGO_ENABLED=0 go build -o bin/tool-router ./cmd/tool-router
+      - name: Install OPA
+        run: |
+          curl -fsSL -o /usr/local/bin/opa https://openpolicyagent.org/downloads/v0.62.1/opa_linux_amd64_static
+          chmod +x /usr/local/bin/opa
+      - name: Start OPA
+        run: opa run --server --addr 0.0.0.0:8181 --bundle policies/ &
+      - name: Start services
+        run: |
+          cat > /tmp/e2e-config.json << 'CFGEOF'
+          {
+            "gateway": {"http_addr": ":8080", "canvas_addr": ":8082", "enable_event_loop": false},
+            "storage": {"postgres_dsn": "postgres://carapulse:carapulse@localhost:5432/carapulse?sslmode=disable"},
+            "tool_router": {"http_addr": ":8081", "base_url": "http://localhost:8081"},
+            "policy": {"opa_url": "http://localhost:8181"},
+            "sandbox": {"enabled": false}
+          }
+          CFGEOF
+          bin/tool-router -config /tmp/e2e-config.json &
+          sleep 2
+          bin/gateway -config /tmp/e2e-config.json &
+          sleep 3
+      - name: Health check
+        run: |
+          curl -sf http://localhost:8080/healthz
+          curl -sf http://localhost:8081/healthz
+      - name: Run E2E smoke tests
+        run: |
+          # Verify API endpoints respond
+          curl -sf http://localhost:8080/healthz | jq .
+          curl -sf http://localhost:8080/readyz | jq .
+          echo "E2E smoke tests passed"

@@ -1,0 +1,9 @@
+-- +goose Up
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS intent TEXT;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS constraints_json JSONB;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS plan_text TEXT;
+
+-- +goose Down
+ALTER TABLE plans DROP COLUMN IF EXISTS plan_text;
+ALTER TABLE plans DROP COLUMN IF EXISTS constraints_json;
+ALTER TABLE plans DROP COLUMN IF EXISTS intent;

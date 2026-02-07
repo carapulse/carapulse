@@ -1,0 +1,9 @@
+{
+  "tool": "alertmanager",
+  "actions": {
+    "alerts_list": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+}

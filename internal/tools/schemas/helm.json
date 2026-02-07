@@ -1,0 +1,53 @@
+{
+  "tool": "helm",
+  "actions": {
+    "status": {
+      "type": "object",
+      "required": ["release"],
+      "properties": {
+        "release": { "type": "string" },
+        "namespace": { "type": "string" }
+      }
+    },
+    "upgrade": {
+      "type": "object",
+      "required": ["release"],
+      "properties": {
+        "release": { "type": "string" },
+        "chart": { "type": "string" },
+        "namespace": { "type": "string" },
+        "values_ref": {
+          "type": "object",
+          "required": ["kind", "ref"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["git_path", "object_store", "inline"] },
+            "ref": { "type": "string" },
+            "sha": { "type": "string" }
+          }
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "required": ["release"],
+      "properties": {
+        "release": { "type": "string" },
+        "namespace": { "type": "string" }
+      }
+    },
+    "list": {
+      "type": "object",
+      "properties": {
+        "namespace": { "type": "string" }
+      }
+    },
+    "get": {
+      "type": "object",
+      "required": ["release"],
+      "properties": {
+        "release": { "type": "string" },
+        "namespace": { "type": "string" }
+      }
+    }
+  }
+}

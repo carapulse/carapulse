@@ -1,0 +1,27 @@
+{{- if .Values.gateway.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "carapulse.fullname" . }}-gateway
+  labels:
+    {{- include "carapulse.componentLabels" (dict "context" . "component" "gateway") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.gateway.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "carapulse.selectorLabels" (dict "context" . "component" "gateway") | nindent 6 }}
+{{- end }}
+---
+{{- if .Values.toolRouter.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "carapulse.fullname" . }}-tool-router
+  labels:
+    {{- include "carapulse.componentLabels" (dict "context" . "component" "tool-router") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.toolRouter.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "carapulse.selectorLabels" (dict "context" . "component" "tool-router") | nindent 6 }}
+{{- end }}

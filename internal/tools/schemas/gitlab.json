@@ -1,0 +1,64 @@
+{
+  "tool": "gitlab",
+  "actions": {
+    "mr": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "source": { "type": "string" },
+        "target": { "type": "string" },
+        "draft": { "type": "boolean" },
+        "labels": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "mr_status": {
+      "type": "object",
+      "properties": {
+        "mr": { "type": "string" }
+      }
+    },
+    "mr_merge": {
+      "type": "object",
+      "required": ["mr"],
+      "properties": {
+        "mr": { "type": "string" },
+        "squash": { "type": "boolean" }
+      }
+    },
+    "mr_view": {
+      "type": "object",
+      "required": ["mr"],
+      "properties": {
+        "mr": { "type": "string" }
+      }
+    },
+    "branch_create": {
+      "type": "object",
+      "required": ["project", "branch", "ref"],
+      "properties": {
+        "project": { "type": "string" },
+        "branch": { "type": "string" },
+        "ref": { "type": "string" }
+      }
+    },
+    "commit_status": {
+      "type": "object",
+      "required": ["project", "sha", "state"],
+      "properties": {
+        "project": { "type": "string" },
+        "sha": { "type": "string" },
+        "state": { "type": "string" },
+        "context": { "type": "string" },
+        "description": { "type": "string" },
+        "target_url": { "type": "string" }
+      }
+    },
+    "*": {
+      "type": "object",
+      "properties": {
+        "args": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

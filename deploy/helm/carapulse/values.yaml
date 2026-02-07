@@ -1,0 +1,125 @@
+global:
+  image:
+    registry: ghcr.io
+    pullPolicy: IfNotPresent
+    tag: ""  # defaults to chart appVersion
+
+config:
+  # Inline JSON config — mounted as Secret.
+  # Users should override this with their own config.
+  gateway:
+    http_addr: ":8080"
+    canvas_addr: ":8082"
+    enable_event_loop: true
+  storage:
+    postgres_dsn: "postgres://carapulse:carapulse@postgres:5432/carapulse?sslmode=disable"
+  orchestrator:
+    temporal_addr: "temporal:7233"
+    namespace: "default"
+    task_queue: "carapulse"
+  tool_router:
+    http_addr: ":8081"
+    base_url: "http://carapulse-tool-router:8081"
+  policy:
+    opa_url: "http://opa:8181"
+  sandbox:
+    enabled: false
+
+gateway:
+  replicaCount: 1
+  image:
+    repository: carapulse/gateway
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 8080
+    canvasPort: 8082
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: carapulse.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+  pdb:
+    enabled: false
+    minAvailable: 1
+
+toolRouter:
+  replicaCount: 1
+  image:
+    repository: carapulse/tool-router
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  service:
+    type: ClusterIP
+    port: 8081
+  pdb:
+    enabled: false
+    minAvailable: 1
+
+orchestrator:
+  replicaCount: 1
+  image:
+    repository: carapulse/orchestrator
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+agent:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: carapulse/agent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+    port: 8090
+
+migration:
+  enabled: true
+  image:
+    repository: carapulse/gateway  # gateway image includes migrate binary
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+networkPolicy:
+  enabled: false

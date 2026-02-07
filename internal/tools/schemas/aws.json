@@ -1,0 +1,60 @@
+{
+  "tool": "aws",
+  "actions": {
+    "assume-role": {
+      "type": "object",
+      "required": ["role_arn"],
+      "properties": {
+        "role_arn": { "type": "string" },
+        "session_name": { "type": "string" },
+        "duration_seconds": { "type": "integer" },
+        "region": { "type": "string" }
+      }
+    },
+    "tagging-get-resources": {
+      "type": "object",
+      "properties": {
+        "tag_filters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "values": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "region": { "type": "string" }
+      }
+    },
+    "cloudtrail-lookup-events": {
+      "type": "object",
+      "properties": {
+        "lookup_attributes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        },
+        "region": { "type": "string" }
+      }
+    },
+    "cloudwatch-get-metric-data": {
+      "type": "object",
+      "properties": {
+        "metric_data_queries": { "type": "array" },
+        "region": { "type": "string" }
+      }
+    },
+    "*": {
+      "type": "object",
+      "properties": {
+        "args": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
