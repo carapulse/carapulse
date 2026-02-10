@@ -13,7 +13,7 @@ coverage.html
 coverage*.out
 
 # Local build outputs
-assistantctl
+/assistantctl
 
 # IDE
 .idea/

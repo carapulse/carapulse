@@ -548,6 +548,75 @@ func TestHandleExecutionLogsStream(t *testing.T) {
 	<-done
 }
 
+func TestHandleEventsSSEMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/events", nil)
+	w := httptest.NewRecorder()
+	srv := &Server{}
+	srv.handleEventsSSE(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandleEventsSSENoFlusher(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
+	w := &noFlushWriter{}
+	srv := &Server{Events: NewEventHub()}
+	srv.handleEventsSSE(w, req)
+	if w.status != http.StatusInternalServerError {
+		t.Fatalf("status: %d", w.status)
+	}
+}
+
+func TestHandleEventsSSEStream(t *testing.T) {
+	server := &Server{Events: NewEventHub()}
+	pr, pw := io.Pipe()
+	writer := &pipeWriter{w: pw}
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		server.handleEventsSSE(writer, req)
+		_ = pw.Close()
+		close(done)
+	}()
+
+	reader := bufio.NewReader(pr)
+	_, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read ok: %v", err)
+	}
+
+	waitForSub(t, server.Events)
+	server.Events.Publish(Event{Event: "plan.updated", Data: map[string]any{"plan_id": "p"}}, "")
+
+	var dataLine string
+	deadline := time.After(500 * time.Millisecond)
+	for dataLine == "" {
+		select {
+		case <-deadline:
+			t.Fatalf("timeout")
+		default:
+		}
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if strings.HasPrefix(line, "data: ") {
+			dataLine = strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+		}
+	}
+	var ev Event
+	if err := json.Unmarshal([]byte(dataLine), &ev); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if ev.Event != "plan.updated" {
+		t.Fatalf("event: %s", ev.Event)
+	}
+	cancel()
+	<-done
+}
+
 func TestHandleExecutionLogsFilters(t *testing.T) {
 	server := &Server{Logs: NewLogHub()}
 	server.Logs.Append(LogLine{ExecutionID: "exec", ToolCallID: "tool2", Level: "info", Message: "skip"})

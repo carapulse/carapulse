@@ -23,6 +23,9 @@ import (
 
 const defaultPolicyPackage = "policy.assistant.v1"
 
+var version = "dev"
+var commit = ""
+
 func main() {
 	logging.Init("assistantctl", nil)
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -42,6 +45,18 @@ var newGatewayClient = func(baseURL, token string) *gatewayClient {
 func run(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("command required")
+	}
+	switch args[0] {
+	case "-h", "--help", "help":
+		writeUsage(out)
+		return nil
+	case "--version", "version":
+		v := version
+		if strings.TrimSpace(commit) != "" {
+			v = v + " (" + commit + ")"
+		}
+		_, _ = fmt.Fprintln(out, v)
+		return nil
 	}
 	switch args[0] {
 	case "plan":
@@ -71,9 +86,20 @@ func run(args []string, out io.Writer) error {
 	}
 }
 
+func writeUsage(out io.Writer) {
+	_, _ = fmt.Fprintln(out, "Usage: assistantctl <command> <subcommand> [flags]")
+	_, _ = fmt.Fprintln(out, "")
+	_, _ = fmt.Fprintln(out, "Commands: plan, exec, context, policy, llm, schedule, workflow, session, playbook, runbook, audit")
+	_, _ = fmt.Fprintln(out, "Global flags: --help, --version")
+}
+
 func runPlan(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("plan subcommand required")
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl plan <create|approve|get|execute> [flags]")
+		return nil
 	}
 	switch args[0] {
 	case "create":
@@ -161,6 +187,10 @@ func runExec(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("exec subcommand required")
 	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl exec <logs> [flags]")
+		return nil
+	}
 	switch args[0] {
 	case "logs":
 		return runExecLogs(args[1:], out)
@@ -198,6 +228,10 @@ func runContext(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("context subcommand required")
 	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl context <refresh|snapshot> [flags]")
+		return nil
+	}
 	switch args[0] {
 	case "refresh":
 		return runContextRefresh(args[1:], out)
@@ -212,6 +246,10 @@ func runSchedule(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("schedule subcommand required")
 	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl schedule <create|list> [flags]")
+		return nil
+	}
 	switch args[0] {
 	case "create":
 		return runScheduleCreate(args[1:], out)
@@ -225,6 +263,10 @@ func runSchedule(args []string, out io.Writer) error {
 func runWorkflow(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("workflow subcommand required")
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl workflow <list|start|replay> [flags]")
+		return nil
 	}
 	switch args[0] {
 	case "replay":
@@ -351,6 +393,10 @@ func runContextRefresh(args []string, out io.Writer) error {
 func runPolicy(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("policy subcommand required")
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl policy <test> [flags]")
+		return nil
 	}
 	switch args[0] {
 	case "test":
@@ -506,6 +552,10 @@ func runSession(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("session subcommand required")
 	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl session <create|list> [flags]")
+		return nil
+	}
 	switch args[0] {
 	case "create":
 		return runSessionCreate(args[1:], out)
@@ -569,6 +619,10 @@ func runPlaybook(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("playbook subcommand required")
 	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl playbook <list|get> [flags]")
+		return nil
+	}
 	switch args[0] {
 	case "list":
 		return runPlaybookList(args[1:], out)
@@ -625,6 +679,10 @@ func runRunbook(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("runbook subcommand required")
 	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl runbook <list|get> [flags]")
+		return nil
+	}
 	switch args[0] {
 	case "list":
 		return runRunbookList(args[1:], out)
@@ -680,6 +738,10 @@ func runRunbookGet(args []string, out io.Writer) error {
 func runAudit(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("audit subcommand required")
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		_, _ = fmt.Fprintln(out, "Usage: assistantctl audit <list> [flags]")
+		return nil
 	}
 	switch args[0] {
 	case "list":

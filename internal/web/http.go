@@ -246,6 +246,7 @@ func (s *Server) registerRoutes() {
 	s.Mux.Handle("/v1/executions", AuthMiddleware(http.HandlerFunc(s.handleExecutions)))
 	s.Mux.Handle("/v1/executions/", AuthMiddleware(http.HandlerFunc(s.handleExecutionByID)))
 	s.Mux.Handle("/v1/ws", AuthMiddleware(http.HandlerFunc(s.handleWS)))
+	s.Mux.Handle("/v1/events", AuthMiddleware(http.HandlerFunc(s.handleEventsSSE)))
 	s.Mux.Handle("/ui/playbooks", AuthMiddleware(http.HandlerFunc(s.handleUIPlaybooks)))
 	s.Mux.Handle("/ui/runbooks", AuthMiddleware(http.HandlerFunc(s.handleUIRunbooks)))
 	s.Mux.Handle("/ui/plans/", AuthMiddleware(http.HandlerFunc(s.handleUIPlan)))

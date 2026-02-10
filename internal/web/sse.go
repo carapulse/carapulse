@@ -72,3 +72,54 @@ func (s *Server) handleExecutionLogs(w http.ResponseWriter, r *http.Request, exe
 		}
 	}
 }
+
+func (s *Server) handleEventsSSE(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	sessionID := sessionIDFromRequest(r)
+	if s != nil && s.SessionRequired {
+		id, err := s.requireSession(r)
+		if err != nil {
+			http.Error(w, "session denied", http.StatusForbidden)
+			return
+		}
+		sessionID = id
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "stream unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	_, _ = fmt.Fprint(w, ":ok\n\n")
+	flusher.Flush()
+
+	hub := s.eventHub()
+	ch, cancel := hub.Subscribe(sessionID)
+	defer cancel()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			payload, err := json.Marshal(ev)
+			if err != nil {
+				continue
+			}
+			name := strings.TrimSpace(ev.Event)
+			if name == "" {
+				name = "event"
+			}
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", name, payload)
+			flusher.Flush()
+		}
+	}
+}

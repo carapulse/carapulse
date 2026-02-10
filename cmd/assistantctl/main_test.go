@@ -29,6 +29,34 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestRunHelp(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"--help"}, &buf); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Usage: assistantctl") {
+		t.Fatalf("usage: %s", buf.String())
+	}
+}
+
+func TestRunVersion(t *testing.T) {
+	oldVersion := version
+	oldCommit := commit
+	version = "1.2.3"
+	commit = "abc"
+	defer func() {
+		version = oldVersion
+		commit = oldCommit
+	}()
+	var buf bytes.Buffer
+	if err := run([]string{"--version"}, &buf); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != "1.2.3 (abc)" {
+		t.Fatalf("version: %s", got)
+	}
+}
+
 func TestRunPlanUnknownCommand(t *testing.T) {
 	var buf bytes.Buffer
 	if err := run([]string{"plan", "nope"}, &buf); err == nil {
