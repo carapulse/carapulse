@@ -70,6 +70,8 @@ curl -X POST http://localhost:8080/v1/plans \
   -d '{"summary":"Scale nginx","trigger":"manual","context":{"tenant_id":"default","environment":"dev"}}'
 ```
 
+`context` minimum required fields for creating plans/schedules: `tenant_id`, `environment`.
+
 ### Build from Source
 
 ```bash
