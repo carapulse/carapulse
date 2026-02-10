@@ -14,7 +14,7 @@ func (s *Server) policyCheckRead(r *http.Request, action string) error {
 	}
 	ctxRef := contextFromHeaders(r)
 	if hasContextValues(ctxRef) {
-		if err := validateContextRefStrict(ctxRef); err != nil {
+		if err := validateContextRefTenantOnly(ctxRef); err != nil {
 			return err
 		}
 	} else if s != nil && s.SessionRequired {
@@ -31,7 +31,7 @@ func (s *Server) policyCheckReadPlan(r *http.Request, plan map[string]any, actio
 	if ctxVal, ok := plan["context"].(map[string]any); ok {
 		ctxRef = contextFromMap(ctxVal)
 	}
-	if err := validateContextRefStrict(ctxRef); err != nil {
+	if err := validateContextRefTenantOnly(ctxRef); err != nil {
 		return ContextRef{}, err
 	}
 	if err := s.policyCheck(r, action, "read", ctxRef, "read", 0); err != nil {

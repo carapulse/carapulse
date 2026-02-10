@@ -111,7 +111,7 @@ func (c *HTTPGatewayClient) doRequest(ctx context.Context, method, path string, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		payload, _ := io.ReadAll(resp.Body)
+		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("gateway status %d: %s", resp.StatusCode, string(payload))
 	}
 	return io.ReadAll(resp.Body)

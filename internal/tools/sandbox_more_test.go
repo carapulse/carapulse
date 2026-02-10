@@ -12,6 +12,33 @@ func TestNewSandboxWithConfig(t *testing.T) {
 	if !sb.Enabled || sb.Runtime != "docker" || sb.Image != "img" {
 		t.Fatalf("sandbox: %#v", sb)
 	}
+	if !sb.Enforce {
+		t.Fatalf("expected Enforce=true by default from NewSandboxWithConfig")
+	}
+}
+
+func TestNewSandboxWithConfigEnforceBlocksWithoutEnabled(t *testing.T) {
+	// When Enabled is false but Enforce is true (the new default),
+	// the sandbox must reject execution with "sandbox required".
+	sb := NewSandboxWithConfig(false, "", "", nil, nil)
+	if !sb.Enforce {
+		t.Fatalf("expected Enforce=true by default")
+	}
+	_, err := sb.Run(context.Background(), []string{"echo", "hi"})
+	if err == nil || err.Error() != "sandbox required" {
+		t.Fatalf("expected sandbox required error, got: %v", err)
+	}
+}
+
+func TestNewSandboxWithConfigEnforceCanBeOverridden(t *testing.T) {
+	// Callers can still set Enforce=false after construction if
+	// explicitly configured to do so.
+	sb := NewSandboxWithConfig(false, "", "", nil, nil)
+	sb.Enforce = false
+	_, err := sb.Run(context.Background(), []string{"echo", "hi"})
+	if err != nil && err.Error() == "sandbox required" {
+		t.Fatalf("expected Enforce=false to allow execution, got: %v", err)
+	}
 }
 
 func TestSandboxMergeAndFormatEnv(t *testing.T) {

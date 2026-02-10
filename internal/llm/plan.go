@@ -76,10 +76,14 @@ func buildPrompt(intent string, context any, evidence any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Sanitize all external inputs to defend against prompt injection.
+	sanitizedIntent := SanitizePromptInput(intent)
+	sanitizedCtx := SanitizePromptInput(string(ctxJSON))
+	sanitizedEv := SanitizePromptInput(string(evJSON))
 	return fmt.Sprintf(
 		"Intent:\n%s\nContext:\n%s\nEvidence:\n%s\nReturn JSON only with shape:\n{\"summary\":string,\"risk_level\":\"low|medium|high\",\"steps\":[{\"action\":string,\"tool\":string,\"input\":object,\"preconditions\":array,\"rollback\":object}]}",
-		intent,
-		string(ctxJSON),
-		string(evJSON),
+		sanitizedIntent,
+		sanitizedCtx,
+		sanitizedEv,
 	), nil
 }

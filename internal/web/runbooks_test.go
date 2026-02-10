@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -197,6 +198,26 @@ func TestHandleRunbookByIDMethodNotAllowed(t *testing.T) {
 	}
 }
 
+type nilRunbookDB struct {
+	fakeDB
+}
+
+func (f *nilRunbookDB) GetRunbook(ctx context.Context, runbookID string) ([]byte, error) {
+	return nil, nil
+}
+
+func TestHandleRunbookByIDNotFound(t *testing.T) {
+	srv := &Server{DB: &nilRunbookDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/runbooks/nonexistent", nil)
+	req.Header.Set("Authorization", testToken)
+	req.Header.Set("X-Tenant-Id", "t")
+	w := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(srv.handleRunbookByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got: %d body: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestHandleRunbooksPostTenantFromHeader(t *testing.T) {
 	srv := &Server{DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	body := `{"service":"svc","name":"rb"}`
@@ -207,5 +228,38 @@ func TestHandleRunbooksPostTenantFromHeader(t *testing.T) {
 	AuthMiddleware(http.HandlerFunc(srv.handleRunbooks)).ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleRunbookByIDDelete(t *testing.T) {
+	srv := &Server{DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	req := httptest.NewRequest(http.MethodDelete, "/v1/runbooks/runbook_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(srv.handleRunbookByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleRunbookByIDDeleteNoDB(t *testing.T) {
+	srv := &Server{Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	req := httptest.NewRequest(http.MethodDelete, "/v1/runbooks/runbook_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(srv.handleRunbookByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandleRunbookByIDDeleteDBError(t *testing.T) {
+	srv := &Server{DB: errorDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	req := httptest.NewRequest(http.MethodDelete, "/v1/runbooks/runbook_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(srv.handleRunbookByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status: %d", w.Code)
 	}
 }

@@ -47,25 +47,30 @@ func (d *DB) CreateSession(ctx context.Context, payload []byte) (string, error) 
 	return id, nil
 }
 
-func (d *DB) ListSessions(ctx context.Context) ([]byte, error) {
-	query := `SELECT COALESCE(jsonb_agg(
+func (d *DB) ListSessions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	limit, offset = clampPagination(limit, offset)
+	query := `WITH total AS (SELECT COUNT(*) AS cnt FROM sessions)
+	SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"session_id", session_id,
-			"name", name,
-			"tenant_id", tenant_id,
-			"group_id", group_id,
-			"owner_actor_id", owner_actor_id,
-			"metadata", metadata,
-			"created_at", created_at,
-			"updated_at", updated_at
+			'session_id', session_id,
+			'name', name,
+			'tenant_id', tenant_id,
+			'group_id', group_id,
+			'owner_actor_id', owner_actor_id,
+			'metadata', metadata,
+			'created_at', created_at,
+			'updated_at', updated_at
 		) ORDER BY created_at DESC
-	), '[]'::jsonb) FROM sessions`
-	row := d.conn.QueryRowContext(ctx, query)
+	), '[]'::jsonb),
+	(SELECT cnt FROM total)
+	FROM (SELECT * FROM sessions ORDER BY created_at DESC LIMIT $1 OFFSET $2) AS sub`
+	row := d.conn.QueryRowContext(ctx, query, limit, offset)
 	var out []byte
-	if err := row.Scan(&out); err != nil {
-		return nil, err
+	var total int
+	if err := row.Scan(&out, &total); err != nil {
+		return nil, 0, err
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (d *DB) GetSession(ctx context.Context, sessionID string) ([]byte, error) {
@@ -168,9 +173,9 @@ func (d *DB) ListSessionMembers(ctx context.Context, sessionID string) ([]byte, 
 	}
 	query := `SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"member_id", member_id,
-			"role", role,
-			"added_at", added_at
+			'member_id', member_id,
+			'role', role,
+			'added_at', added_at
 		) ORDER BY added_at DESC
 	), '[]'::jsonb) FROM session_members WHERE session_id=$1`
 	row := d.conn.QueryRowContext(ctx, query, sessionID)

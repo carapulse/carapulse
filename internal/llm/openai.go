@@ -55,7 +55,7 @@ func (c *OpenAIClient) Complete(prompt string, maxTokens int) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		payload, _ := io.ReadAll(resp.Body)
+		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("openai status %d: %s", resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	var out openAIResponse

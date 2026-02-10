@@ -60,24 +60,29 @@ func (d *DB) CreateRunbook(ctx context.Context, payload []byte) (string, error) 
 	return id, nil
 }
 
-func (d *DB) ListRunbooks(ctx context.Context) ([]byte, error) {
-	query := `SELECT COALESCE(jsonb_agg(
+func (d *DB) ListRunbooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	limit, offset = clampPagination(limit, offset)
+	query := `WITH total AS (SELECT COUNT(*) AS cnt FROM runbooks)
+	SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"runbook_id", runbook_id,
-			"tenant_id", tenant_id,
-			"service", service,
-			"name", name,
-			"version", version,
-			"tags", tags,
-			"created_at", created_at
+			'runbook_id', runbook_id,
+			'tenant_id', tenant_id,
+			'service', service,
+			'name', name,
+			'version', version,
+			'tags', tags,
+			'created_at', created_at
 		) ORDER BY created_at DESC
-	), '[]'::jsonb) FROM runbooks`
-	row := d.conn.QueryRowContext(ctx, query)
+	), '[]'::jsonb),
+	(SELECT cnt FROM total)
+	FROM (SELECT * FROM runbooks ORDER BY created_at DESC LIMIT $1 OFFSET $2) AS sub`
+	row := d.conn.QueryRowContext(ctx, query, limit, offset)
 	var out []byte
-	if err := row.Scan(&out); err != nil {
-		return nil, err
+	var total int
+	if err := row.Scan(&out, &total); err != nil {
+		return nil, 0, err
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (d *DB) GetRunbook(ctx context.Context, runbookID string) ([]byte, error) {
@@ -108,6 +113,14 @@ func (d *DB) GetRunbook(ctx context.Context, runbookID string) ([]byte, error) {
 		"created_at": createdAt.UTC().Format(time.RFC3339),
 	}
 	return json.Marshal(out)
+}
+
+func (d *DB) DeleteRunbook(ctx context.Context, runbookID string) error {
+	if d == nil || d.conn == nil {
+		return errors.New("db not available")
+	}
+	_, err := d.conn.ExecContext(ctx, "DELETE FROM runbooks WHERE runbook_id=$1", runbookID)
+	return err
 }
 
 func defaultJSON(data []byte) []byte {

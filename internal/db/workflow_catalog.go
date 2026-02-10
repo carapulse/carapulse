@@ -45,21 +45,26 @@ func (d *DB) CreateWorkflowCatalog(ctx context.Context, payload []byte) (string,
 	return id, nil
 }
 
-func (d *DB) ListWorkflowCatalog(ctx context.Context) ([]byte, error) {
-	query := `SELECT COALESCE(jsonb_agg(
+func (d *DB) ListWorkflowCatalog(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	limit, offset = clampPagination(limit, offset)
+	query := `WITH total AS (SELECT COUNT(*) AS cnt FROM workflow_catalog)
+	SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"workflow_id", workflow_id,
-			"tenant_id", tenant_id,
-			"name", name,
-			"version", version,
-			"spec", spec_json,
-			"created_at", created_at
+			'workflow_id', workflow_id,
+			'tenant_id', tenant_id,
+			'name', name,
+			'version', version,
+			'spec', spec_json,
+			'created_at', created_at
 		) ORDER BY created_at DESC
-	), '[]'::jsonb) FROM workflow_catalog`
-	row := d.conn.QueryRowContext(ctx, query)
+	), '[]'::jsonb),
+	(SELECT cnt FROM total)
+	FROM (SELECT * FROM workflow_catalog ORDER BY created_at DESC LIMIT $1 OFFSET $2) AS sub`
+	row := d.conn.QueryRowContext(ctx, query, limit, offset)
 	var out []byte
-	if err := row.Scan(&out); err != nil {
-		return nil, err
+	var total int
+	if err := row.Scan(&out, &total); err != nil {
+		return nil, 0, err
 	}
-	return out, nil
+	return out, total, nil
 }

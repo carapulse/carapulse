@@ -94,8 +94,8 @@ func TestRunAlertEventLoopPolicyDeny(t *testing.T) {
 	}
 }
 
-func TestRunAlertEventLoopWriteHappyPath(t *testing.T) {
-	db := &fakeDB{}
+func TestRunAlertEventLoopWriteRequiresHumanApproval(t *testing.T) {
+	db := &approvalDB{}
 	exec := &execStub{}
 	s := &Server{
 		DB:              db,
@@ -112,14 +112,49 @@ func TestRunAlertEventLoopWriteHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if res.PlanID == "" || res.ExecutionID == "" {
-		t.Fatalf("res: %#v", res)
+	if res.PlanID == "" {
+		t.Fatalf("missing plan id")
 	}
-	if db.updateStatus != "approved" {
-		t.Fatalf("status: %s", db.updateStatus)
+	// LLM-generated plans from webhooks must never be auto-executed.
+	if res.ExecutionID != "" {
+		t.Fatalf("expected no auto-execution, got execution_id=%s", res.ExecutionID)
 	}
-	if exec.calls != 1 {
-		t.Fatalf("exec calls: %d", exec.calls)
+	// Must always create an external approval request.
+	if db.created == 0 {
+		t.Fatalf("expected approval to be created")
+	}
+	// Must never auto-approve even with AutoApproveLow=true.
+	if db.updateStatus == "approved" {
+		t.Fatalf("must not auto-approve LLM-generated plans from webhooks")
+	}
+	// Executor must not be called.
+	if exec.calls != 0 {
+		t.Fatalf("executor should not be called, got %d calls", exec.calls)
+	}
+}
+
+func TestRunAlertEventLoopNoAutoExecEvenLowRisk(t *testing.T) {
+	db := &approvalDB{}
+	exec := &execStub{}
+	s := &Server{
+		DB:              db,
+		Policy:          &policy.Evaluator{Checker: policy.CheckerFunc(func(input policy.PolicyInput) (policy.PolicyDecision, error) { return policy.PolicyDecision{Decision: "allow"}, nil })},
+		Planner:         plannerStub{text: `[{"action":"deploy","tool":"helm","input":{}}]`},
+		Executor:        exec,
+		AutoApproveLow:  true,
+		EnableEventLoop: true,
+	}
+	payload := validHookPayload()
+	payload["alerts"] = []any{map[string]any{"labels": map[string]any{"alertname": "deploy fix"}}}
+	res, err := s.runAlertEventLoop(context.Background(), "alertmanager", payload)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.ExecutionID != "" {
+		t.Fatalf("should not auto-execute LLM plans")
+	}
+	if exec.calls != 0 {
+		t.Fatalf("executor must not be called for LLM plans")
 	}
 }
 

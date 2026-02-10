@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -34,12 +35,20 @@ type Sandbox struct {
 }
 
 func NewSandbox() *Sandbox {
-	return &Sandbox{}
+	return &Sandbox{Enforce: true}
+}
+
+// NewSandboxPermissive creates a sandbox with enforcement disabled.
+// A warning is logged at construction time to flag the security implication.
+func NewSandboxPermissive() *Sandbox {
+	slog.Warn("sandbox enforcement disabled: all tool commands run without isolation")
+	return &Sandbox{Enforce: false}
 }
 
 func NewSandboxWithConfig(enabled bool, runtime, image string, egress, mounts []string) *Sandbox {
 	return &Sandbox{
 		Enabled: enabled,
+		Enforce: true,
 		Runtime: runtime,
 		Image:   image,
 		Egress:  egress,

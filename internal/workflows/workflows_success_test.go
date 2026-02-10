@@ -39,7 +39,7 @@ func TestWorkflowSuccessPaths(t *testing.T) {
 	defer func() { _ = os.Setenv("PATH", oldPath) }()
 
 	router := tools.NewRouter()
-	sandbox := tools.NewSandbox()
+	sandbox := &tools.Sandbox{Enforce: false}
 	rt := NewRuntime(router, sandbox, tools.HTTPClients{})
 	ctx := context.Background()
 	if err := GitOpsDeployWorkflow(ctx, DeployInput{PlanID: "p", ArgoCDApp: "app"}, rt, approveDB{}); err != nil {

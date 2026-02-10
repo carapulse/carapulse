@@ -27,21 +27,26 @@ func (d *DB) InsertContextSnapshot(ctx context.Context, source string, nodesJSON
 	return id, nil
 }
 
-func (d *DB) ListContextSnapshots(ctx context.Context) ([]byte, error) {
-	query := `SELECT COALESCE(jsonb_agg(
+func (d *DB) ListContextSnapshots(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	limit, offset = clampPagination(limit, offset)
+	query := `WITH total AS (SELECT COUNT(*) AS cnt FROM context_snapshots)
+	SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"snapshot_id", snapshot_id,
-			"source", source,
-			"collected_at", collected_at,
-			"labels", labels_json
+			'snapshot_id', snapshot_id,
+			'source', source,
+			'collected_at', collected_at,
+			'labels', labels_json
 		) ORDER BY collected_at DESC
-	), '[]'::jsonb) FROM context_snapshots`
-	row := d.conn.QueryRowContext(ctx, query)
+	), '[]'::jsonb),
+	(SELECT cnt FROM total)
+	FROM (SELECT * FROM context_snapshots ORDER BY collected_at DESC LIMIT $1 OFFSET $2) AS sub`
+	row := d.conn.QueryRowContext(ctx, query, limit, offset)
 	var out []byte
-	if err := row.Scan(&out); err != nil {
-		return nil, err
+	var total int
+	if err := row.Scan(&out, &total); err != nil {
+		return nil, 0, err
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (d *DB) GetContextSnapshot(ctx context.Context, snapshotID string) ([]byte, error) {

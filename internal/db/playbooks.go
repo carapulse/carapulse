@@ -46,24 +46,29 @@ func (d *DB) CreatePlaybook(ctx context.Context, payload []byte) (string, error)
 	return id, nil
 }
 
-func (d *DB) ListPlaybooks(ctx context.Context) ([]byte, error) {
-	query := `SELECT COALESCE(jsonb_agg(
+func (d *DB) ListPlaybooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	limit, offset = clampPagination(limit, offset)
+	query := `WITH total AS (SELECT COUNT(*) AS cnt FROM playbooks)
+	SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"playbook_id", playbook_id,
-			"tenant_id", tenant_id,
-			"name", name,
-			"version", version,
-			"tags", tags,
-			"spec", spec_json,
-			"created_at", created_at
+			'playbook_id', playbook_id,
+			'tenant_id', tenant_id,
+			'name', name,
+			'version', version,
+			'tags', tags,
+			'spec', spec_json,
+			'created_at', created_at
 		) ORDER BY created_at DESC
-	), '[]'::jsonb) FROM playbooks`
-	row := d.conn.QueryRowContext(ctx, query)
+	), '[]'::jsonb),
+	(SELECT cnt FROM total)
+	FROM (SELECT * FROM playbooks ORDER BY created_at DESC LIMIT $1 OFFSET $2) AS sub`
+	row := d.conn.QueryRowContext(ctx, query, limit, offset)
 	var out []byte
-	if err := row.Scan(&out); err != nil {
-		return nil, err
+	var total int
+	if err := row.Scan(&out, &total); err != nil {
+		return nil, 0, err
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (d *DB) GetPlaybook(ctx context.Context, playbookID string) ([]byte, error) {
@@ -92,6 +97,14 @@ func (d *DB) GetPlaybook(ctx context.Context, playbookID string) ([]byte, error)
 		"created_at":  createdAt,
 	}
 	return json.Marshal(out)
+}
+
+func (d *DB) DeletePlaybook(ctx context.Context, playbookID string) error {
+	if d == nil || d.conn == nil {
+		return errors.New("db not available")
+	}
+	_, err := d.conn.ExecContext(ctx, "DELETE FROM playbooks WHERE playbook_id=$1", playbookID)
+	return err
 }
 
 func nullJSON(value []byte) any {

@@ -58,6 +58,14 @@ func run(args []string, out io.Writer) error {
 		return runSchedule(args[1:], out)
 	case "workflow":
 		return runWorkflow(args[1:], out)
+	case "session":
+		return runSession(args[1:], out)
+	case "playbook":
+		return runPlaybook(args[1:], out)
+	case "runbook":
+		return runRunbook(args[1:], out)
+	case "audit":
+		return runAudit(args[1:], out)
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -72,6 +80,10 @@ func runPlan(args []string, out io.Writer) error {
 		return runPlanCreate(args[1:], out)
 	case "approve":
 		return runPlanApprove(args[1:], out)
+	case "get":
+		return runPlanGet(args[1:], out)
+	case "execute":
+		return runPlanExecute(args[1:], out)
 	default:
 		return fmt.Errorf("unknown plan command: %s", args[0])
 	}
@@ -189,6 +201,8 @@ func runContext(args []string, out io.Writer) error {
 	switch args[0] {
 	case "refresh":
 		return runContextRefresh(args[1:], out)
+	case "snapshot":
+		return runContextSnapshot(args[1:], out)
 	default:
 		return fmt.Errorf("unknown context command: %s", args[0])
 	}
@@ -215,6 +229,10 @@ func runWorkflow(args []string, out io.Writer) error {
 	switch args[0] {
 	case "replay":
 		return runWorkflowReplay(args[1:], out)
+	case "list":
+		return runWorkflowList(args[1:], out)
+	case "start":
+		return runWorkflowStart(args[1:], out)
 	default:
 		return fmt.Errorf("unknown workflow command: %s", args[0])
 	}
@@ -375,6 +393,345 @@ func runPolicyTest(args []string, out io.Writer) error {
 	return enc.Encode(decision)
 }
 
+func runPlanGet(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("plan get", flag.ContinueOnError)
+	planID := fs.String("plan-id", "", "plan id")
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*planID) == "" {
+		return errors.New("plan-id required")
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.GetPlan(context.Background(), *planID)
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
+func runPlanExecute(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("plan execute", flag.ContinueOnError)
+	planID := fs.String("plan-id", "", "plan id")
+	approvalToken := fs.String("approval-token", "", "approval token")
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*planID) == "" {
+		return errors.New("plan-id required")
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	execID, err := client.ExecutePlan(context.Background(), *planID, *approvalToken)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(out, execID)
+	return nil
+}
+
+func runWorkflowList(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("workflow list", flag.ContinueOnError)
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	tenantID := fs.String("tenant-id", "", "tenant id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.ListWorkflows(context.Background(), *tenantID)
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
+func runWorkflowStart(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("workflow start", flag.ContinueOnError)
+	name := fs.String("name", "", "workflow name")
+	contextValue := fs.String("context", "", "context json or @file")
+	inputValue := fs.String("input", "", "input json or @file")
+	constraintsValue := fs.String("constraints", "", "constraints json or @file")
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*name) == "" {
+		return errors.New("name required")
+	}
+	var ctxRef web.ContextRef
+	if err := parseJSONInput(*contextValue, &ctxRef); err != nil {
+		return err
+	}
+	var input map[string]any
+	if err := parseJSONInput(*inputValue, &input); err != nil {
+		return err
+	}
+	var constraints any
+	if err := parseJSONInput(*constraintsValue, &constraints); err != nil {
+		return err
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	resp, err := client.StartWorkflow(context.Background(), *name, web.WorkflowStartRequest{
+		Context:     ctxRef,
+		Input:       input,
+		Constraints: constraints,
+	})
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(resp)
+	return nil
+}
+
+func runSession(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("session subcommand required")
+	}
+	switch args[0] {
+	case "create":
+		return runSessionCreate(args[1:], out)
+	case "list":
+		return runSessionList(args[1:], out)
+	default:
+		return fmt.Errorf("unknown session command: %s", args[0])
+	}
+}
+
+func runSessionCreate(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("session create", flag.ContinueOnError)
+	name := fs.String("name", "", "session name")
+	tenantID := fs.String("tenant-id", "", "tenant id")
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*name) == "" {
+		return errors.New("name required")
+	}
+	if strings.TrimSpace(*tenantID) == "" {
+		return errors.New("tenant-id required")
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	sessionID, err := client.CreateSession(context.Background(), web.SessionRequest{
+		Name:     *name,
+		TenantID: *tenantID,
+	})
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(out, sessionID)
+	return nil
+}
+
+func runSessionList(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("session list", flag.ContinueOnError)
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.ListSessions(context.Background())
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
+func runPlaybook(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("playbook subcommand required")
+	}
+	switch args[0] {
+	case "list":
+		return runPlaybookList(args[1:], out)
+	case "get":
+		return runPlaybookGet(args[1:], out)
+	default:
+		return fmt.Errorf("unknown playbook command: %s", args[0])
+	}
+}
+
+func runPlaybookList(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("playbook list", flag.ContinueOnError)
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.ListPlaybooks(context.Background())
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
+func runPlaybookGet(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("playbook get", flag.ContinueOnError)
+	playbookID := fs.String("playbook-id", "", "playbook id")
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*playbookID) == "" {
+		return errors.New("playbook-id required")
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.GetPlaybook(context.Background(), *playbookID)
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
+func runRunbook(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("runbook subcommand required")
+	}
+	switch args[0] {
+	case "list":
+		return runRunbookList(args[1:], out)
+	case "get":
+		return runRunbookGet(args[1:], out)
+	default:
+		return fmt.Errorf("unknown runbook command: %s", args[0])
+	}
+}
+
+func runRunbookList(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("runbook list", flag.ContinueOnError)
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.ListRunbooks(context.Background())
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
+func runRunbookGet(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("runbook get", flag.ContinueOnError)
+	runbookID := fs.String("runbook-id", "", "runbook id")
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*runbookID) == "" {
+		return errors.New("runbook-id required")
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.GetRunbook(context.Background(), *runbookID)
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
+func runAudit(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("audit subcommand required")
+	}
+	switch args[0] {
+	case "list":
+		return runAuditList(args[1:], out)
+	default:
+		return fmt.Errorf("unknown audit command: %s", args[0])
+	}
+}
+
+func runAuditList(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("audit list", flag.ContinueOnError)
+	tenantID := fs.String("tenant-id", "", "tenant id filter")
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.ListAuditEvents(context.Background(), *tenantID)
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
+func runContextSnapshot(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("context snapshot", flag.ContinueOnError)
+	tenantID := fs.String("tenant-id", "", "tenant id")
+	gateway := fs.String("gateway", "", "gateway base url")
+	token := fs.String("token", "", "gateway token")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*tenantID) == "" {
+		return errors.New("tenant-id required")
+	}
+	client, err := gatewayClientFromFlags(*gateway, *token)
+	if err != nil {
+		return err
+	}
+	data, err := client.ListContextSnapshots(context.Background(), *tenantID)
+	if err != nil {
+		return err
+	}
+	_, _ = out.Write(data)
+	return nil
+}
+
 func gatewayClientFromFlags(baseURL, token string) (*gatewayClient, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
@@ -472,6 +829,128 @@ func (c *gatewayClient) CreateSchedule(ctx context.Context, req web.ScheduleCrea
 
 func (c *gatewayClient) ListSchedules(ctx context.Context) ([]byte, error) {
 	return c.doRequest(ctx, http.MethodGet, "/v1/schedules", nil)
+}
+
+func (c *gatewayClient) GetPlan(ctx context.Context, planID string) ([]byte, error) {
+	return c.doRequest(ctx, http.MethodGet, "/v1/plans/"+planID, nil)
+}
+
+func (c *gatewayClient) ExecutePlan(ctx context.Context, planID, approvalToken string) (string, error) {
+	req := map[string]string{}
+	if strings.TrimSpace(approvalToken) != "" {
+		req["approval_token"] = approvalToken
+	}
+	var resp struct {
+		ExecutionID string `json:"execution_id"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/plans/"+planID+":execute", req, &resp); err != nil {
+		return "", err
+	}
+	if resp.ExecutionID == "" {
+		return "", errors.New("missing execution_id")
+	}
+	return resp.ExecutionID, nil
+}
+
+func (c *gatewayClient) ListWorkflows(ctx context.Context, tenantID string) ([]byte, error) {
+	return c.doRequestWithTenant(ctx, http.MethodGet, "/v1/workflows", nil, tenantID)
+}
+
+func (c *gatewayClient) StartWorkflow(ctx context.Context, name string, req web.WorkflowStartRequest) ([]byte, error) {
+	return c.doRequest(ctx, http.MethodPost, "/v1/workflows/"+name+"/start", req)
+}
+
+func (c *gatewayClient) CreateSession(ctx context.Context, req web.SessionRequest) (string, error) {
+	var resp struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/sessions", req, &resp); err != nil {
+		return "", err
+	}
+	if resp.SessionID == "" {
+		return "", errors.New("missing session_id")
+	}
+	return resp.SessionID, nil
+}
+
+func (c *gatewayClient) ListSessions(ctx context.Context) ([]byte, error) {
+	return c.doRequest(ctx, http.MethodGet, "/v1/sessions", nil)
+}
+
+func (c *gatewayClient) ListPlaybooks(ctx context.Context) ([]byte, error) {
+	return c.doRequest(ctx, http.MethodGet, "/v1/playbooks", nil)
+}
+
+func (c *gatewayClient) GetPlaybook(ctx context.Context, id string) ([]byte, error) {
+	return c.doRequest(ctx, http.MethodGet, "/v1/playbooks/"+id, nil)
+}
+
+func (c *gatewayClient) ListRunbooks(ctx context.Context) ([]byte, error) {
+	return c.doRequest(ctx, http.MethodGet, "/v1/runbooks", nil)
+}
+
+func (c *gatewayClient) GetRunbook(ctx context.Context, id string) ([]byte, error) {
+	return c.doRequest(ctx, http.MethodGet, "/v1/runbooks/"+id, nil)
+}
+
+func (c *gatewayClient) ListAuditEvents(ctx context.Context, tenantID string) ([]byte, error) {
+	path := "/v1/audit/events"
+	if strings.TrimSpace(tenantID) != "" {
+		path += "?tenant_id=" + url.QueryEscape(tenantID)
+	}
+	return c.doRequest(ctx, http.MethodGet, path, nil)
+}
+
+func (c *gatewayClient) ListContextSnapshots(ctx context.Context, tenantID string) ([]byte, error) {
+	return c.doRequestWithTenant(ctx, http.MethodGet, "/v1/context/snapshots", nil, tenantID)
+}
+
+func (c *gatewayClient) doRequestWithTenant(ctx context.Context, method, path string, req any, tenantID string) ([]byte, error) {
+	if c.Client == nil {
+		c.Client = &http.Client{Timeout: 5 * time.Second}
+	}
+	var body io.Reader
+	if req != nil {
+		data, err := json.Marshal(req)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(data)
+	}
+	u, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	rawQuery := ""
+	if idx := strings.Index(path, "?"); idx != -1 {
+		rawQuery = path[idx+1:]
+		path = path[:idx]
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/") + path
+	u.RawQuery = rawQuery
+	request, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
+	if req != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	if c.Token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	if strings.TrimSpace(tenantID) != "" {
+		request.Header.Set("X-Tenant-Id", tenantID)
+	}
+	resp, err := c.Client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		payload, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("gateway status %d: %s", resp.StatusCode, string(payload))
+	}
+	return io.ReadAll(resp.Body)
 }
 
 func (c *gatewayClient) doJSON(ctx context.Context, method, path string, req any, out any) error {

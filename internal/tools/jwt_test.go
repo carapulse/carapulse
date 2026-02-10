@@ -2,7 +2,8 @@ package tools
 
 import "testing"
 
-func TestParseJWTClaims(t *testing.T) {
+// TestParseJWTClaimsViaTools verifies the tools wrapper still works.
+func TestParseJWTClaimsViaTools(t *testing.T) {
 	payload := "eyJzdWIiOiJ1c2VyMSIsImVtYWlsIjoidXNlckBleGFtcGxlLmNvbSIsImdyb3VwcyI6WyJzcmUiXSwiaXNzIjoiaXNzdWVyIn0"
 	token := "aaa." + payload + ".bbb"
 	claims, err := ParseJWTClaims(token)
@@ -22,20 +23,6 @@ func TestParseJWTClaims(t *testing.T) {
 
 func TestParseJWTClaimsInvalid(t *testing.T) {
 	if _, err := ParseJWTClaims("invalid"); err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestParseJWTClaimsBadBase64(t *testing.T) {
-	if _, err := ParseJWTClaims("aaa.bad!!.bbb"); err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestParseJWTClaimsBadJSON(t *testing.T) {
-	payload := "eyJzdWIiOiJ1c2VyIg"
-	token := "aaa." + payload + ".bbb"
-	if _, err := ParseJWTClaims(token); err == nil {
 		t.Fatalf("expected error")
 	}
 }

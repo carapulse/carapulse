@@ -3,6 +3,8 @@ package web
 import (
 	"encoding/json"
 	"strings"
+
+	"carapulse/internal/tools"
 )
 
 type planStepDraft struct {
@@ -12,6 +14,20 @@ type planStepDraft struct {
 	Input         json.RawMessage `json:"input"`
 	Preconditions json.RawMessage `json:"preconditions"`
 	Rollback      json.RawMessage `json:"rollback"`
+}
+
+// registeredTools returns a set of valid tool names from the registry.
+var registeredTools = func() map[string]bool {
+	m := make(map[string]bool, len(tools.Registry))
+	for _, t := range tools.Registry {
+		m[strings.ToLower(t.Name)] = true
+	}
+	return m
+}
+
+// isRegisteredTool checks whether a tool name is in the tool registry.
+func isRegisteredTool(tool string) bool {
+	return registeredTools()[strings.ToLower(strings.TrimSpace(tool))]
 }
 
 func parsePlanSteps(planText string) []planStepDraft {
@@ -27,6 +43,10 @@ func parsePlanSteps(planText string) []planStepDraft {
 	out := make([]planStepDraft, 0, len(steps))
 	for _, step := range steps {
 		if strings.TrimSpace(step.Action) == "" || strings.TrimSpace(step.Tool) == "" {
+			continue
+		}
+		// Reject steps referencing tools not in the registry.
+		if !isRegisteredTool(step.Tool) {
 			continue
 		}
 		if strings.TrimSpace(step.Stage) == "" {

@@ -646,6 +646,656 @@ func TestGatewayClientListSchedules(t *testing.T) {
 	}
 }
 
+// --- plan get ---
+
+func TestRunPlanGetMissingPlanID(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"plan", "get", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlanGetMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"plan", "get", "-plan-id", "plan_1"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlanGetBadFlag(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"plan", "get", "-badflag"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlanGetOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/plans/plan_1" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		_, _ = w.Write([]byte(`{"plan_id":"plan_1","summary":"test"}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"plan", "get", "-plan-id", "plan_1", "-gateway", ts.URL, "-token", "tok"}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "plan_1") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunPlanGetGatewayError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	if err := run([]string{"plan", "get", "-plan-id", "plan_1", "-gateway", ts.URL}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- plan execute ---
+
+func TestRunPlanExecuteMissingPlanID(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"plan", "execute", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlanExecuteMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"plan", "execute", "-plan-id", "plan_1"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlanExecuteBadFlag(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"plan", "execute", "-badflag"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlanExecuteOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/plans/plan_1:execute" || r.Method != http.MethodPost {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if payload["approval_token"] != "tok123" {
+			t.Fatalf("payload: %#v", payload)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"execution_id":"exec_1"}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"plan", "execute", "-plan-id", "plan_1", "-approval-token", "tok123", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if strings.TrimSpace(buf.String()) != "exec_1" {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunPlanExecuteMissingExecID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	if err := run([]string{"plan", "execute", "-plan-id", "plan_1", "-gateway", ts.URL}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- workflow list ---
+
+func TestRunWorkflowListOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/workflows" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		if got := r.Header.Get("X-Tenant-Id"); got != "t1" {
+			t.Fatalf("tenant: %s", got)
+		}
+		_, _ = w.Write([]byte(`{"workflows":[{"name":"gitops_deploy"}]}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"workflow", "list", "-gateway", ts.URL, "-tenant-id", "t1"}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "gitops_deploy") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunWorkflowListMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"workflow", "list"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- workflow start ---
+
+func TestRunWorkflowStartOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/workflows/gitops_deploy/start" || r.Method != http.MethodPost {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		_, _ = w.Write([]byte(`{"plan_id":"plan_1","status":"pending"}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{
+		"workflow", "start",
+		"-name", "gitops_deploy",
+		"-context", `{"tenant_id":"t"}`,
+		"-input", `{"argocd_app":"myapp"}`,
+		"-gateway", ts.URL,
+	}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "plan_1") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunWorkflowStartMissingName(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"workflow", "start", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunWorkflowStartMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"workflow", "start", "-name", "gitops_deploy"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunWorkflowStartBadContext(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"workflow", "start", "-name", "n", "-context", "{", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunWorkflowStartBadInput(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"workflow", "start", "-name", "n", "-input", "{", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunWorkflowStartBadConstraints(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"workflow", "start", "-name", "n", "-constraints", "{", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- session create ---
+
+func TestRunSessionMissingSubcommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"session"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunSessionUnknownCommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"session", "nope"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunSessionCreateOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/sessions" || r.Method != http.MethodPost {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if payload["name"] != "mysession" || payload["tenant_id"] != "t1" {
+			t.Fatalf("payload: %#v", payload)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"session_id":"sess_1"}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"session", "create", "-name", "mysession", "-tenant-id", "t1", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if strings.TrimSpace(buf.String()) != "sess_1" {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunSessionCreateMissingName(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"session", "create", "-tenant-id", "t", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunSessionCreateMissingTenantID(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"session", "create", "-name", "n", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunSessionCreateMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"session", "create", "-name", "n", "-tenant-id", "t"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunSessionCreateMissingSessionID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	if err := run([]string{"session", "create", "-name", "n", "-tenant-id", "t", "-gateway", ts.URL}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- session list ---
+
+func TestRunSessionListOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/sessions" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		_, _ = w.Write([]byte(`[{"session_id":"sess_1"}]`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"session", "list", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "sess_1") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunSessionListMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"session", "list"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- playbook list ---
+
+func TestRunPlaybookMissingSubcommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"playbook"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlaybookUnknownCommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"playbook", "nope"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlaybookListOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/playbooks" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		_, _ = w.Write([]byte(`[{"id":"pb_1"}]`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"playbook", "list", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "pb_1") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunPlaybookListMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"playbook", "list"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- playbook get ---
+
+func TestRunPlaybookGetOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/playbooks/pb_1" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		_, _ = w.Write([]byte(`{"id":"pb_1","name":"deploy"}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"playbook", "get", "-playbook-id", "pb_1", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "pb_1") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunPlaybookGetMissingID(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"playbook", "get", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlaybookGetMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"playbook", "get", "-playbook-id", "pb_1"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunPlaybookGetGatewayError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	if err := run([]string{"playbook", "get", "-playbook-id", "pb_1", "-gateway", ts.URL}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- runbook list ---
+
+func TestRunRunbookMissingSubcommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"runbook"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunRunbookUnknownCommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"runbook", "nope"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunRunbookListOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runbooks" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		_, _ = w.Write([]byte(`[{"id":"rb_1"}]`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"runbook", "list", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "rb_1") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunRunbookListMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"runbook", "list"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- runbook get ---
+
+func TestRunRunbookGetOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runbooks/rb_1" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		_, _ = w.Write([]byte(`{"id":"rb_1","name":"incident"}`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"runbook", "get", "-runbook-id", "rb_1", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "rb_1") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunRunbookGetMissingID(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"runbook", "get", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunRunbookGetMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"runbook", "get", "-runbook-id", "rb_1"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunRunbookGetGatewayError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	if err := run([]string{"runbook", "get", "-runbook-id", "rb_1", "-gateway", ts.URL}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- audit list ---
+
+func TestRunAuditMissingSubcommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"audit"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunAuditUnknownCommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"audit", "nope"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunAuditListOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audit/events" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		_, _ = w.Write([]byte(`[{"event":"plan.create"}]`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"audit", "list", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "plan.create") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunAuditListWithTenantFilter(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("tenant_id"); got != "t1" {
+			t.Fatalf("tenant_id: %s", got)
+		}
+		_, _ = w.Write([]byte(`[{"event":"plan.create"}]`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"audit", "list", "-tenant-id", "t1", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+}
+
+func TestRunAuditListMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"audit", "list"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- context snapshot ---
+
+func TestRunContextSnapshotOK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/context/snapshots" || r.Method != http.MethodGet {
+			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
+		}
+		if got := r.Header.Get("X-Tenant-Id"); got != "t1" {
+			t.Fatalf("tenant: %s", got)
+		}
+		_, _ = w.Write([]byte(`[{"snapshot_id":"snap_1"}]`))
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	err := run([]string{"context", "snapshot", "-tenant-id", "t1", "-gateway", ts.URL}, &buf)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "snap_1") {
+		t.Fatalf("output: %s", buf.String())
+	}
+}
+
+func TestRunContextSnapshotMissingTenantID(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"context", "snapshot", "-gateway", "http://example"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunContextSnapshotMissingGateway(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"context", "snapshot", "-tenant-id", "t1"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunContextSnapshotGatewayError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	var buf bytes.Buffer
+	if err := run([]string{"context", "snapshot", "-tenant-id", "t1", "-gateway", ts.URL}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+// --- gateway client new methods ---
+
+func TestGatewayClientGetPlan(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/plans/plan_1" {
+			t.Fatalf("path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"plan_id":"plan_1"}`))
+	}))
+	defer ts.Close()
+	client := &gatewayClient{BaseURL: ts.URL}
+	data, err := client.GetPlan(context.Background(), "plan_1")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(string(data), "plan_1") {
+		t.Fatalf("data: %s", data)
+	}
+}
+
+func TestGatewayClientExecutePlanMissingID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+	client := &gatewayClient{BaseURL: ts.URL}
+	if _, err := client.ExecutePlan(context.Background(), "plan_1", ""); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestGatewayClientCreateSessionMissingID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+	client := &gatewayClient{BaseURL: ts.URL}
+	if _, err := client.CreateSession(context.Background(), web.SessionRequest{Name: "n", TenantID: "t"}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestGatewayClientDoRequestWithTenantBadURL(t *testing.T) {
+	client := &gatewayClient{BaseURL: "://bad"}
+	if _, err := client.doRequestWithTenant(context.Background(), http.MethodGet, "/v1/workflows", nil, "t"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
 func TestMainFatalOnError(t *testing.T) {
 	oldFatal := fatalf
 	called := false

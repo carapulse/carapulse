@@ -82,6 +82,6 @@ USER 10001:10001
 ENV HOME=/home/app
 
 EXPOSE 8081
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 CMD wget -qO- http://localhost:8081/healthz || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 CMD curl -fsS http://localhost:8081/healthz || exit 1
 ENTRYPOINT ["/usr/local/bin/tool-router","-config","/etc/carapulse/config.json"]
 

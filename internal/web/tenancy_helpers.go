@@ -78,6 +78,34 @@ func policyCheckTenantRead(s *Server, r *http.Request, action, tenantID string) 
 	return s.policyCheck(r, action, "read", ContextRef{TenantID: tenantID}, "read", 0)
 }
 
+func tenantFromContext(item map[string]any) string {
+	if item == nil {
+		return ""
+	}
+	ctx, ok := item["context"].(map[string]any)
+	if !ok || ctx == nil {
+		return ""
+	}
+	if v, ok := ctx["tenant_id"].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+func filterJSONByTenantContext(payload []byte, tenantID string) ([]byte, error) {
+	var items []map[string]any
+	if err := json.Unmarshal(payload, &items); err != nil {
+		return nil, err
+	}
+	filtered := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if tenantMatch(tenantFromContext(item), tenantID, false) {
+			filtered = append(filtered, item)
+		}
+	}
+	return json.Marshal(filtered)
+}
+
 func tenantFromLabels(item map[string]any) string {
 	if item == nil {
 		return ""

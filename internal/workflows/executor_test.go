@@ -125,7 +125,7 @@ func TestExecutorRunOnceSuccess(t *testing.T) {
 	}
 	defer func() { _ = os.Setenv("PATH", oldPath) }()
 
-	rt := NewRuntime(tools.NewRouter(), tools.NewSandbox(), tools.HTTPClients{})
+	rt := NewRuntime(tools.NewRouter(), &tools.Sandbox{Enforce: false}, tools.HTTPClients{})
 	executor := &Executor{Store: store, Runtime: rt, Objects: blob}
 	count, err := executor.RunOnce(context.Background())
 	if err != nil {
@@ -655,6 +655,70 @@ func TestExecutorRunRunOnceError(t *testing.T) {
 	}
 	if err := executor.Run(context.Background()); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestExecutorStepTimeoutExpired(t *testing.T) {
+	resetPath := withTempCLI(t, "kubectl")
+	defer resetPath()
+
+	store := &fakeExecutionStore{
+		executions: []db.ExecutionRef{{ExecutionID: "exec_1", PlanID: "plan_1"}},
+		stepsJSON: func() []byte {
+			steps := []map[string]any{{"action": "scale", "tool": "kubectl", "input": map[string]any{"resource": "deploy/app", "replicas": 1}}}
+			b, _ := json.Marshal(steps)
+			return b
+		}(),
+	}
+
+	// RunFunc blocks until context is canceled, simulating a long-running tool.
+	sandbox := &tools.Sandbox{RunFunc: func(ctx context.Context, cmd []string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	rt := NewRuntime(tools.NewRouter(), sandbox, tools.HTTPClients{})
+	executor := &Executor{
+		Store:       store,
+		Runtime:     rt,
+		StepTimeout: 50 * time.Millisecond,
+	}
+	_, err := executor.RunOnce(context.Background())
+	if err == nil {
+		t.Fatalf("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("expected deadline exceeded, got: %v", err)
+	}
+	if len(store.completed) == 0 || store.completed[0] != "failed" {
+		t.Fatalf("completed: %#v", store.completed)
+	}
+}
+
+func TestExecutorStepTimeoutDefault(t *testing.T) {
+	executor := &Executor{
+		Store:   &fakeExecutionStore{},
+		Runtime: NewRuntime(tools.NewRouter(), tools.NewSandbox(), tools.HTTPClients{}),
+	}
+	// When Run is called, StepTimeout should be set to default 5 minutes.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately so Run returns
+	_ = executor.Run(ctx)
+	if executor.StepTimeout != 5*time.Minute {
+		t.Fatalf("StepTimeout: got %v, want 5m", executor.StepTimeout)
+	}
+}
+
+func TestExecutorStepTimeoutCustom(t *testing.T) {
+	executor := &Executor{
+		Store:       &fakeExecutionStore{},
+		Runtime:     NewRuntime(tools.NewRouter(), tools.NewSandbox(), tools.HTTPClients{}),
+		StepTimeout: 10 * time.Minute,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = executor.Run(ctx)
+	if executor.StepTimeout != 10*time.Minute {
+		t.Fatalf("StepTimeout: got %v, want 10m", executor.StepTimeout)
 	}
 }
 

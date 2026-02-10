@@ -3,6 +3,7 @@ package context
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -20,16 +21,21 @@ func (w *watcherStub) Watch(ctx context.Context, out chan<- Snapshot) error {
 }
 
 type storeStub struct {
+	mu    sync.Mutex
 	nodes []Node
 	edges []Edge
 }
 
 func (s *storeStub) UpsertContextNode(ctx context.Context, node Node) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.nodes = append(s.nodes, node)
 	return nil
 }
 
 func (s *storeStub) UpsertContextEdge(ctx context.Context, edge Edge) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.edges = append(s.edges, edge)
 	return nil
 }
@@ -95,8 +101,11 @@ func TestContextServiceIngestLoop(t *testing.T) {
 	go svc.ingestLoop(ctx, ch)
 	ch <- Snapshot{Nodes: []Node{{NodeID: "n1"}}, Edges: []Edge{{EdgeID: "e1"}}}
 	time.Sleep(20 * time.Millisecond)
-	if len(store.nodes) != 1 || len(store.edges) != 1 {
-		t.Fatalf("nodes=%d edges=%d", len(store.nodes), len(store.edges))
+	store.mu.Lock()
+	nNodes, nEdges := len(store.nodes), len(store.edges)
+	store.mu.Unlock()
+	if nNodes != 1 || nEdges != 1 {
+		t.Fatalf("nodes=%d edges=%d", nNodes, nEdges)
 	}
 }
 

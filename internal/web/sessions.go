@@ -28,6 +28,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var req SessionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -72,7 +73,8 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "policy denied", http.StatusForbidden)
 			return
 		}
-		payload, err := s.DB.ListSessions(r.Context())
+		limit, offset := parsePagination(r)
+		payload, total, err := s.DB.ListSessions(r.Context(), limit, offset)
 		if err != nil {
 			http.Error(w, "db error", http.StatusInternalServerError)
 			return
@@ -83,7 +85,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		group := strings.TrimSpace(r.URL.Query().Get("group_id"))
 		if tenant == "" && group == "" {
-			w.Write(payload)
+			paginatedResponse(w, payload, limit, offset, total)
 			return
 		}
 		filtered, err := filterSessions(payload, tenant, group)
@@ -91,7 +93,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "encode error", http.StatusInternalServerError)
 			return
 		}
-		w.Write(filtered)
+		paginatedResponse(w, filtered, limit, offset, total)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -131,6 +133,7 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write(payload)
 	case http.MethodPut:
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var req SessionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -194,6 +197,7 @@ func (s *Server) handleSessionMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var req SessionMemberRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)

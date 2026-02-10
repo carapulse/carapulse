@@ -55,15 +55,15 @@ func (d *DB) ListOperatorMemory(ctx context.Context, tenantID string) ([]byte, e
 	row := d.conn.QueryRowContext(ctx, `
 		SELECT COALESCE(jsonb_agg(
 			jsonb_build_object(
-				"memory_id", memory_id,
-				"tenant_id", tenant_id,
-				"title", title,
-				"body", body,
-				"tags", tags,
-				"metadata", metadata,
-				"owner_actor_id", owner_actor_id,
-				"created_at", created_at,
-				"updated_at", updated_at
+				'memory_id', memory_id,
+				'tenant_id', tenant_id,
+				'title', title,
+				'body', body,
+				'tags', tags,
+				'metadata', metadata,
+				'owner_actor_id', owner_actor_id,
+				'created_at', created_at,
+				'updated_at', updated_at
 			) ORDER BY created_at DESC
 		), '[]'::jsonb)
 		FROM operator_memory WHERE tenant_id=$1

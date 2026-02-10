@@ -2,10 +2,10 @@ package web
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"sync"
-	"time"
+
+	"carapulse/internal/auth"
 )
 
 type Actor struct {
@@ -20,6 +20,7 @@ type AuthConfig struct {
 	Issuer   string
 	Audience string
 	JWKSURL  string
+	DevMode  bool
 }
 
 func WithActor(ctx context.Context, actor Actor) context.Context {
@@ -58,11 +59,12 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if err := validateClaims(claims, currentAuthConfig()); err != nil {
+		cfg := currentAuthConfig()
+		if err := validateClaims(claims, cfg); err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if err := VerifyJWTSignature(token, currentAuthConfig()); err != nil {
+		if err := VerifyJWTSignature(token, cfg); err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -72,41 +74,15 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-var timeNow = time.Now
-
 func validateClaims(claims JWTPayload, cfg AuthConfig) error {
-	if cfg.Issuer != "" && claims.Iss != cfg.Issuer {
-		return errors.New("issuer mismatch")
-	}
-	if cfg.Audience != "" && !audienceMatches(claims.Aud, cfg.Audience) {
-		return errors.New("audience mismatch")
-	}
-	now := float64(timeNow().Unix())
-	if claims.Exp > 0 && now >= claims.Exp {
-		return errors.New("token expired")
-	}
-	if claims.Nbf > 0 && now < claims.Nbf {
-		return errors.New("token not yet valid")
-	}
-	return nil
+	return auth.ValidateClaims(claims, auth.AuthConfig{
+		Issuer:   cfg.Issuer,
+		Audience: cfg.Audience,
+		JWKSURL:  cfg.JWKSURL,
+		DevMode:  cfg.DevMode,
+	})
 }
 
 func audienceMatches(aud any, target string) bool {
-	switch v := aud.(type) {
-	case string:
-		return v == target
-	case []string:
-		for _, item := range v {
-			if item == target {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range v {
-			if s, ok := item.(string); ok && s == target {
-				return true
-			}
-		}
-	}
-	return false
+	return auth.AudienceMatches(aud, target)
 }

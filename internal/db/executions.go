@@ -18,8 +18,8 @@ func (d *DB) ListExecutionsByStatus(ctx context.Context, status string, limit in
 	}
 	query := `SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"execution_id", execution_id,
-			"plan_id", plan_id
+			'execution_id', execution_id,
+			'plan_id', plan_id
 		)
 	), '[]'::jsonb)
 	FROM (

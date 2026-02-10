@@ -34,7 +34,11 @@ spec:
             - "-embed"
           env:
             - name: POSTGRES_DSN
-              value: {{ .Values.config.storage.postgres_dsn | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "carapulse.fullname" . }}-config
+                  key: postgres-dsn
+                  optional: true
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           volumeMounts:

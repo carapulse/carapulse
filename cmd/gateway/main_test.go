@@ -299,6 +299,70 @@ func TestApprovalRunDefault(t *testing.T) {
 	}
 }
 
+func TestRunWithoutOPAAndTemporal(t *testing.T) {
+	registerFakeDriver()
+	file := t.TempDir() + "/cfg.json"
+	data := `{"gateway":{"http_addr":":9094"},"storage":{"postgres_dsn":"dsn"}}`
+	if err := os.WriteFile(file, []byte(data), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	oldServer := newServer
+	defer func() { newServer = oldServer }()
+
+	var captured *web.Server
+	newServer = func(database web.DBWriter, evaluator *policy.Evaluator) *web.Server {
+		captured = web.NewServer(database, evaluator)
+		return captured
+	}
+
+	err := run([]string{"-config", file}, func(srv *http.Server) error { return nil })
+	if err != nil {
+		t.Fatalf("gateway should start without OPA and Temporal, got: %v", err)
+	}
+	if captured == nil {
+		t.Fatalf("server not created")
+	}
+	if captured.Executor != nil {
+		t.Fatalf("executor should be nil without Temporal")
+	}
+}
+
+func TestRunTemporalConnectError(t *testing.T) {
+	registerFakeDriver()
+	file := t.TempDir() + "/cfg.json"
+	data := `{"gateway":{"http_addr":":9095"},"orchestrator":{"temporal_addr":"bad:7233","namespace":"n","task_queue":"q"},"storage":{"postgres_dsn":"dsn"}}`
+	if err := os.WriteFile(file, []byte(data), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	oldTemporal := newTemporalClient
+	newTemporalClient = func(cfg config.OrchestratorConfig) (client.Client, error) {
+		return nil, errors.New("connection refused")
+	}
+	defer func() { newTemporalClient = oldTemporal }()
+
+	oldServer := newServer
+	defer func() { newServer = oldServer }()
+
+	var captured *web.Server
+	newServer = func(database web.DBWriter, evaluator *policy.Evaluator) *web.Server {
+		captured = web.NewServer(database, evaluator)
+		return captured
+	}
+
+	err := run([]string{"-config", file}, func(srv *http.Server) error { return nil })
+	if err != nil {
+		t.Fatalf("gateway should start despite Temporal connect error, got: %v", err)
+	}
+	if captured == nil {
+		t.Fatalf("server not created")
+	}
+	if captured.Executor != nil {
+		t.Fatalf("executor should be nil when Temporal fails to connect")
+	}
+}
+
 func TestRunBadConfig(t *testing.T) {
 	err := run([]string{"-config", "/no/such/file.json"}, func(srv *http.Server) error { return nil })
 	if err == nil {

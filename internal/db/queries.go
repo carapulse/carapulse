@@ -69,17 +69,22 @@ func (d *DB) CreatePlan(ctx context.Context, planJSON []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_, err = d.conn.ExecContext(ctx, `
-		INSERT INTO plans(plan_id, created_at, trigger, summary, context_json, risk_level, intent, constraints_json, plan_text, session_id, meta_json)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	`, planID, time.Now().UTC(), trigger, summary, contextJSON, risk, nullString(intent), constraintsJSON, nullString(planText), nullString(sessionID), metaJSON)
+	now := time.Now().UTC()
+	err = d.withTx(ctx, func(conn dbConn) error {
+		_, err := conn.ExecContext(ctx, `
+			INSERT INTO plans(plan_id, created_at, trigger, summary, context_json, risk_level, intent, constraints_json, plan_text, session_id, meta_json)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		`, planID, now, trigger, summary, contextJSON, risk, nullString(intent), constraintsJSON, nullString(planText), nullString(sessionID), metaJSON)
+		if err != nil {
+			return err
+		}
+		if len(steps) > 0 {
+			return insertPlanStepsConn(ctx, conn, planID, steps)
+		}
+		return nil
+	})
 	if err != nil {
 		return "", err
-	}
-	if len(steps) > 0 {
-		if err := d.insertPlanSteps(ctx, planID, steps); err != nil {
-			return "", err
-		}
 	}
 	return planID, nil
 }
@@ -145,6 +150,10 @@ func decodePlanSteps(raw any) ([]planStepPayload, error) {
 }
 
 func (d *DB) insertPlanSteps(ctx context.Context, planID string, steps []planStepPayload) error {
+	return insertPlanStepsConn(ctx, d.conn, planID, steps)
+}
+
+func insertPlanStepsConn(ctx context.Context, conn dbConn, planID string, steps []planStepPayload) error {
 	for _, step := range steps {
 		if step.Action == "" || step.Tool == "" {
 			continue
@@ -162,7 +171,7 @@ func (d *DB) insertPlanSteps(ctx context.Context, planID string, steps []planSte
 			rollbackJSON = step.Rollback
 		}
 		stepID := newID("step")
-		_, err := d.conn.ExecContext(ctx, `
+		_, err := conn.ExecContext(ctx, `
 			INSERT INTO plan_steps(step_id, plan_id, action, tool, input_json, preconditions_json, rollback_json)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
 		`, stepID, planID, step.Action, step.Tool, inputJSON, preconditionsJSON, rollbackJSON)
@@ -176,12 +185,12 @@ func (d *DB) insertPlanSteps(ctx context.Context, planID string, steps []planSte
 func (d *DB) ListPlanSteps(ctx context.Context, planID string) ([]byte, error) {
 	query := `SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"step_id", step_id,
-			"action", action,
-			"tool", tool,
-			"input", input_json,
-			"preconditions", preconditions_json,
-			"rollback", rollback_json
+			'step_id', step_id,
+			'action', action,
+			'tool', tool,
+			'input', input_json,
+			'preconditions', preconditions_json,
+			'rollback', rollback_json
 		) ORDER BY step_id
 	), '[]'::jsonb) FROM plan_steps WHERE plan_id=$1`
 	row := d.conn.QueryRowContext(ctx, query, planID)
@@ -195,11 +204,11 @@ func (d *DB) ListPlanSteps(ctx context.Context, planID string) ([]byte, error) {
 func (d *DB) ListApprovalsByPlan(ctx context.Context, planID string) ([]byte, error) {
 	query := `SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"approval_id", approval_id,
-			"status", status,
-			"approver", approver_json,
-			"expires_at", expires_at,
-			"source", source
+			'approval_id', approval_id,
+			'status', status,
+			'approver', approver_json,
+			'expires_at', expires_at,
+			'source', source
 		) ORDER BY expires_at DESC NULLS LAST
 	), '[]'::jsonb) FROM approvals WHERE plan_id=$1`
 	row := d.conn.QueryRowContext(ctx, query, planID)
@@ -220,6 +229,18 @@ func (d *DB) CreateExecution(ctx context.Context, planID string) (string, error)
 		return "", err
 	}
 	return execID, nil
+}
+
+func (d *DB) HasActiveExecution(ctx context.Context, planID string) (bool, error) {
+	var count int
+	err := d.conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM executions
+		WHERE plan_id=$1 AND status IN ('pending', 'running')
+	`, planID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (d *DB) GetExecution(ctx context.Context, execID string) ([]byte, error) {
@@ -363,27 +384,32 @@ func (d *DB) CreateSchedule(ctx context.Context, payload []byte) (string, error)
 	return scheduleID, nil
 }
 
-func (d *DB) ListSchedules(ctx context.Context) ([]byte, error) {
-	query := `SELECT COALESCE(jsonb_agg(
+func (d *DB) ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	limit, offset = clampPagination(limit, offset)
+	query := `WITH total AS (SELECT COUNT(*) AS cnt FROM schedules)
+	SELECT COALESCE(jsonb_agg(
 		jsonb_build_object(
-			"schedule_id", schedule_id,
-			"created_at", created_at,
-			"cron", cron,
-			"context", context_json,
-			"summary", summary,
-			"intent", intent,
-			"constraints", constraints_json,
-			"trigger", trigger,
-			"enabled", enabled,
-			"last_run_at", last_run_at
+			'schedule_id', schedule_id,
+			'created_at', created_at,
+			'cron', cron,
+			'context', context_json,
+			'summary', summary,
+			'intent', intent,
+			'constraints', constraints_json,
+			'trigger', trigger,
+			'enabled', enabled,
+			'last_run_at', last_run_at
 		) ORDER BY created_at DESC
-	), '[]'::jsonb) FROM schedules`
-	row := d.conn.QueryRowContext(ctx, query)
+	), '[]'::jsonb),
+	(SELECT cnt FROM total)
+	FROM (SELECT * FROM schedules ORDER BY created_at DESC LIMIT $1 OFFSET $2) AS sub`
+	row := d.conn.QueryRowContext(ctx, query, limit, offset)
 	var out []byte
-	if err := row.Scan(&out); err != nil {
-		return nil, err
+	var total int
+	if err := row.Scan(&out, &total); err != nil {
+		return nil, 0, err
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (d *DB) UpdateScheduleLastRun(ctx context.Context, scheduleID string, at time.Time) error {
@@ -450,6 +476,73 @@ func nullString(value string) any {
 	return value
 }
 
+func (d *DB) ListPlans(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	limit, offset = clampPagination(limit, offset)
+	query := `WITH total AS (SELECT COUNT(*) AS cnt FROM plans)
+	SELECT COALESCE(jsonb_agg(
+		jsonb_build_object(
+			'plan_id', plan_id,
+			'created_at', created_at,
+			'trigger', trigger,
+			'summary', summary,
+			'context', context_json,
+			'risk_level', risk_level,
+			'intent', intent,
+			'status', COALESCE((SELECT status FROM approvals WHERE approvals.plan_id = sub.plan_id ORDER BY expires_at DESC NULLS LAST LIMIT 1), 'none')
+		) ORDER BY created_at DESC
+	), '[]'::jsonb),
+	(SELECT cnt FROM total)
+	FROM (SELECT * FROM plans ORDER BY created_at DESC LIMIT $1 OFFSET $2) AS sub`
+	row := d.conn.QueryRowContext(ctx, query, limit, offset)
+	var out []byte
+	var total int
+	if err := row.Scan(&out, &total); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+func (d *DB) ListExecutions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	limit, offset = clampPagination(limit, offset)
+	query := `WITH total AS (SELECT COUNT(*) AS cnt FROM executions)
+	SELECT COALESCE(jsonb_agg(
+		jsonb_build_object(
+			'execution_id', execution_id,
+			'plan_id', plan_id,
+			'status', status,
+			'started_at', started_at,
+			'completed_at', completed_at
+		) ORDER BY started_at DESC
+	), '[]'::jsonb),
+	(SELECT cnt FROM total)
+	FROM (SELECT * FROM executions ORDER BY started_at DESC LIMIT $1 OFFSET $2) AS sub`
+	row := d.conn.QueryRowContext(ctx, query, limit, offset)
+	var out []byte
+	var total int
+	if err := row.Scan(&out, &total); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+func (d *DB) CancelExecution(ctx context.Context, executionID string) error {
+	res, err := d.conn.ExecContext(ctx, `
+		UPDATE executions SET status='cancelled', completed_at=NOW()
+		WHERE execution_id=$1 AND status IN ('pending','running')
+	`, executionID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (d *DB) CreateApproval(ctx context.Context, planID string, payload []byte) (string, error) {
 	id := newID("approval")
 	_, err := d.conn.ExecContext(ctx, `
@@ -466,5 +559,21 @@ func (d *DB) UpdateApprovalStatus(ctx context.Context, approvalID, status string
 	_, err := d.conn.ExecContext(ctx, `
 		UPDATE approvals SET status=$1 WHERE approval_id=$2
 	`, status, approvalID)
+	return err
+}
+
+func (d *DB) DeletePlan(ctx context.Context, planID string) error {
+	if d == nil || d.conn == nil {
+		return errors.New("db not available")
+	}
+	_, err := d.conn.ExecContext(ctx, "DELETE FROM plans WHERE plan_id=$1", planID)
+	return err
+}
+
+func (d *DB) DeleteSchedule(ctx context.Context, scheduleID string) error {
+	if d == nil || d.conn == nil {
+		return errors.New("db not available")
+	}
+	_, err := d.conn.ExecContext(ctx, "DELETE FROM schedules WHERE schedule_id=$1", scheduleID)
 	return err
 }

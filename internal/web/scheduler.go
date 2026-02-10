@@ -24,7 +24,7 @@ type Schedule struct {
 }
 
 type ScheduleStore interface {
-	ListSchedules(ctx context.Context) ([]byte, error)
+	ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error)
 	CreatePlan(ctx context.Context, payload []byte) (string, error)
 	UpdateScheduleLastRun(ctx context.Context, scheduleID string, at time.Time) error
 }
@@ -85,7 +85,7 @@ func (s *Scheduler) RunOnce(ctx context.Context) (int, error) {
 		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 		s.Parser = &parser
 	}
-	payload, err := s.Store.ListSchedules(ctx)
+	payload, _, err := s.Store.ListSchedules(ctx, 200, 0)
 	if err != nil {
 		return 0, err
 	}

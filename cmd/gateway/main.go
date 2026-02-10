@@ -296,9 +296,8 @@ func run(args []string, serve func(*http.Server) error) error {
 		if cfg.Orchestrator.TemporalAddr != "" {
 			tc, err := newTemporalClient(cfg.Orchestrator)
 			if err != nil {
-				return err
-			}
-			if tc != nil {
+				slog.Warn("temporal client connection failed, workflow orchestration disabled", "error", err)
+			} else if tc != nil {
 				temporalClient = tc
 				defer temporalClient.Close()
 			}
@@ -319,11 +318,12 @@ func run(args []string, serve func(*http.Server) error) error {
 	if cfg.Policy.OPAURL != "" {
 		evaluator.Checker = newPolicyService(cfg.Policy)
 	}
-	if cfg.Gateway.OIDCIssuer != "" || cfg.Gateway.OIDCClientID != "" || cfg.Gateway.OIDCJWKSURL != "" {
+	if cfg.Gateway.OIDCIssuer != "" || cfg.Gateway.OIDCClientID != "" || cfg.Gateway.OIDCJWKSURL != "" || cfg.Gateway.DevMode {
 		web.SetAuthConfig(web.AuthConfig{
 			Issuer:   cfg.Gateway.OIDCIssuer,
 			Audience: cfg.Gateway.OIDCClientID,
 			JWKSURL:  cfg.Gateway.OIDCJWKSURL,
+			DevMode:  cfg.Gateway.DevMode,
 		})
 	}
 	if cfg.Gateway.JWKSCacheTTLSecs > 0 {
@@ -520,7 +520,7 @@ func run(args []string, serve func(*http.Server) error) error {
 }
 
 type workflowCatalogStore interface {
-	ListWorkflowCatalog(ctx context.Context) ([]byte, error)
+	ListWorkflowCatalog(ctx context.Context, limit, offset int) ([]byte, int, error)
 	CreateWorkflowCatalog(ctx context.Context, payload []byte) (string, error)
 }
 
@@ -533,7 +533,7 @@ func seedWorkflowCatalog(ctx context.Context, store workflowCatalogStore) {
 			slog.Warn("workflow catalog seed skipped", "error", r)
 		}
 	}()
-	payload, err := store.ListWorkflowCatalog(ctx)
+	payload, _, err := store.ListWorkflowCatalog(ctx, 200, 0)
 	if err != nil {
 		slog.Warn("workflow catalog list failed", "error", err)
 		return

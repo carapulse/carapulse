@@ -131,5 +131,13 @@ func (p *AlertPoller) shouldSkip(fingerprint string) bool {
 		}
 	}
 	p.seen[fingerprint] = now
+	// Evict stale entries to prevent unbounded map growth.
+	if len(p.seen) > 1000 {
+		for fp, ts := range p.seen {
+			if now.Sub(ts) >= p.DedupWindow {
+				delete(p.seen, fp)
+			}
+		}
+	}
 	return false
 }

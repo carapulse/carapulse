@@ -32,3 +32,23 @@ func validateContextRefStrict(ctx ContextRef) error {
 	}
 	return nil
 }
+
+// validateContextRefTenantOnly is the minimum required for tenant-scoped reads/listing.
+func validateContextRefTenantOnly(ctx ContextRef) error {
+	if strings.TrimSpace(ctx.TenantID) == "" {
+		return errors.New("tenant_id required")
+	}
+	return nil
+}
+
+// validateContextRefMinimal is the minimum required to create tenant-scoped resources
+// like plans/schedules. Strict validation is enforced at execution boundaries.
+func validateContextRefMinimal(ctx ContextRef) error {
+	if strings.TrimSpace(ctx.TenantID) == "" {
+		return errors.New("tenant_id required")
+	}
+	if strings.TrimSpace(ctx.Environment) == "" {
+		return errors.New("environment required")
+	}
+	return nil
+}

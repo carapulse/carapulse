@@ -26,7 +26,7 @@ func (s *Server) runAlertEventLoop(ctx context.Context, source string, payload m
 		return EventLoopResult{}, errors.New("db unavailable")
 	}
 	ctxRef := contextFromHook(payload)
-	if err := validateContextRefStrict(ctxRef); err != nil {
+	if err := validateContextRefTenantOnly(ctxRef); err != nil {
 		return EventLoopResult{}, err
 	}
 	summary := hookSummary(source, payload)
@@ -114,6 +114,15 @@ func (s *Server) runAlertEventLoop(ctx context.Context, source string, payload m
 			plan["steps"] = defaults
 		}
 	}
+	// Re-assess risk based on actual plan steps, not just intent keywords.
+	// The step-based risk can only escalate, never downgrade.
+	if len(stepsDraft) > 0 {
+		risk = effectiveRiskDrafts(risk, stepsDraft)
+		plan["risk_level"] = risk
+		if risk != "read" {
+			actionType = "write"
+		}
+	}
 	if len(diagnostics) > 0 {
 		if data, err := json.Marshal(diagnostics); err == nil {
 			plan["diagnostics"] = json.RawMessage(data)
@@ -134,32 +143,13 @@ func (s *Server) runAlertEventLoop(ctx context.Context, source string, payload m
 	if err != nil {
 		return EventLoopResult{}, err
 	}
-	execID := ""
+	// LLM-generated plans from webhooks/alerts always require human approval.
+	// Never auto-approve or auto-execute: the risk classification is based on
+	// intent keywords which can be gamed, and the LLM output is not trusted.
 	if actionType == "write" {
-		if risk == "low" && s.AutoApproveLow && dec.Decision != "require_approval" {
-			if _, err := s.createApproval(ctx, planID, false); err == nil {
-				_ = s.DB.UpdateApprovalStatusByPlan(ctx, planID, "approved")
-			}
-		} else {
-			if _, err := s.createApproval(ctx, planID, true); err != nil {
-				return EventLoopResult{}, err
-			}
-		}
-		if s.Executor != nil {
-			execID, err = s.DB.CreateExecution(ctx, planID)
-			if err != nil {
-				return EventLoopResult{}, err
-			}
-			steps := []PlanStep{}
-			if raw, err := json.Marshal(plan["steps"]); err == nil {
-				if parsed, err := parsePlanStepsJSON(raw); err == nil {
-					steps = parsed
-				}
-			}
-			if _, err := s.Executor.StartExecution(ctx, planID, execID, ctxRef, steps); err != nil {
-				return EventLoopResult{}, err
-			}
+		if _, err := s.createApproval(ctx, planID, true); err != nil {
+			return EventLoopResult{}, err
 		}
 	}
-	return EventLoopResult{PlanID: planID, ExecutionID: execID}, nil
+	return EventLoopResult{PlanID: planID}, nil
 }

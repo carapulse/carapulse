@@ -25,6 +25,7 @@ func (s *Server) handleRunbooks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var req RunbookCreateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -72,7 +73,8 @@ func (s *Server) handleRunbooks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "policy denied", http.StatusForbidden)
 			return
 		}
-		out, err := s.DB.ListRunbooks(r.Context())
+		limit, offset := parsePagination(r)
+		out, total, err := s.DB.ListRunbooks(r.Context(), limit, offset)
 		if err != nil {
 			http.Error(w, "db error", http.StatusInternalServerError)
 			return
@@ -116,11 +118,13 @@ func (s *Server) handleRunbooks(w http.ResponseWriter, r *http.Request) {
 					}
 					combined = append(combined, item)
 				}
-				_ = json.NewEncoder(w).Encode(combined)
+				combinedJSON, _ := json.Marshal(combined)
+				paginatedResponse(w, combinedJSON, limit, offset, total)
 				return
 			}
 		}
-		_ = json.NewEncoder(w).Encode(dbItems)
+		itemsJSON, _ := json.Marshal(dbItems)
+		paginatedResponse(w, itemsJSON, limit, offset, total)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -128,44 +132,59 @@ func (s *Server) handleRunbooks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRunbookByID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	if s.DB == nil {
-		http.Error(w, "db unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
-	if tenantID == "" {
-		http.Error(w, "tenant_id required", http.StatusBadRequest)
-		return
-	}
 	runbookID := strings.TrimPrefix(r.URL.Path, "/v1/runbooks/")
-	if strings.TrimSpace(runbookID) == "" {
-		http.Error(w, "runbook_id required", http.StatusBadRequest)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		if s.DB == nil {
+			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+		if tenantID == "" {
+			http.Error(w, "tenant_id required", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(runbookID) == "" {
+			http.Error(w, "runbook_id required", http.StatusBadRequest)
+			return
+		}
+		if err := policyCheckTenantRead(s, r, "runbook.get", tenantID); err != nil {
+			s.auditEvent(r.Context(), "runbook.get", "deny", map[string]any{"runbook_id": runbookID}, err.Error())
+			http.Error(w, "policy denied", http.StatusForbidden)
+			return
+		}
+		payload, err := s.DB.GetRunbook(r.Context(), runbookID)
+		if err != nil {
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		if payload == nil {
+			http.NotFound(w, r)
+			return
+		}
+		var item map[string]any
+		if err := json.Unmarshal(payload, &item); err != nil {
+			http.Error(w, "decode error", http.StatusInternalServerError)
+			return
+		}
+		if !tenantMatch(tenantFromMap(item), tenantID, false) {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(payload)
+	case http.MethodDelete:
+		if s.DB == nil {
+			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if err := s.DB.DeleteRunbook(r.Context(), runbookID); err != nil {
+			http.Error(w, "delete failed", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
-	if err := policyCheckTenantRead(s, r, "runbook.get", tenantID); err != nil {
-		s.auditEvent(r.Context(), "runbook.get", "deny", map[string]any{"runbook_id": runbookID}, err.Error())
-		http.Error(w, "policy denied", http.StatusForbidden)
-		return
-	}
-	payload, err := s.DB.GetRunbook(r.Context(), runbookID)
-	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
-		return
-	}
-	var item map[string]any
-	if err := json.Unmarshal(payload, &item); err != nil {
-		http.Error(w, "decode error", http.StatusInternalServerError)
-		return
-	}
-	if !tenantMatch(tenantFromMap(item), tenantID, false) {
-		http.NotFound(w, r)
-		return
-	}
-	_, _ = w.Write(payload)
 }
 
 func runbookKey(item map[string]any) string {

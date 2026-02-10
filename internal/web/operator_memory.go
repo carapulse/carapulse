@@ -34,6 +34,7 @@ func (s *Server) handleOperatorMemory(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var req OperatorMemoryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -206,6 +207,7 @@ func (s *Server) handleOperatorMemoryByID(w http.ResponseWriter, r *http.Request
 		}
 		http.NotFound(w, r)
 	case http.MethodPut:
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var req OperatorMemoryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)

@@ -139,34 +139,40 @@ func TestCreateWorkflowCatalogNoTenant(t *testing.T) {
 }
 
 func TestListWorkflowCatalog(t *testing.T) {
-	conn := &fakeConn{row: fakeRow{values: []any{[]byte(`[]`)}}}
+	conn := &fakeConn{row: fakeRow{values: []any{[]byte(`[]`), 0}}}
 	d := &DB{conn: conn}
-	out, err := d.ListWorkflowCatalog(context.Background())
+	out, total, err := d.ListWorkflowCatalog(context.Background(), 50, 0)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if string(out) != "[]" {
 		t.Fatalf("out: %s", out)
 	}
+	if total != 0 {
+		t.Fatalf("total: got %d, want 0", total)
+	}
 }
 
 func TestListWorkflowCatalogScanError(t *testing.T) {
 	conn := &fakeConn{row: fakeRow{err: sql.ErrConnDone}}
 	d := &DB{conn: conn}
-	if _, err := d.ListWorkflowCatalog(context.Background()); err == nil {
+	if _, _, err := d.ListWorkflowCatalog(context.Background(), 50, 0); err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
 func TestListWorkflowCatalogWithData(t *testing.T) {
 	data := `[{"workflow_id":"wf_1","name":"deploy"}]`
-	conn := &fakeConn{row: fakeRow{values: []any{[]byte(data)}}}
+	conn := &fakeConn{row: fakeRow{values: []any{[]byte(data), 1}}}
 	d := &DB{conn: conn}
-	out, err := d.ListWorkflowCatalog(context.Background())
+	out, total, err := d.ListWorkflowCatalog(context.Background(), 50, 0)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if string(out) != data {
 		t.Fatalf("out: %s", out)
+	}
+	if total != 1 {
+		t.Fatalf("total: got %d, want 1", total)
 	}
 }

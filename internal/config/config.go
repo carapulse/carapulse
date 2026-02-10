@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"strings"
 )
@@ -29,8 +30,9 @@ type GatewayConfig struct {
 	OIDCIssuer   string `json:"oidc_issuer"`
 	OIDCClientID string `json:"oidc_client_id"`
 	OIDCJWKSURL  string `json:"oidc_jwks_url"`
-	JWKSCacheTTLSecs int `json:"jwks_cache_ttl_secs"`
-	EnableEventLoop bool `json:"enable_event_loop"`
+	JWKSCacheTTLSecs int  `json:"jwks_cache_ttl_secs"`
+	DevMode          bool `json:"dev_mode"`
+	EnableEventLoop  bool `json:"enable_event_loop"`
 	EventLoopSources []string `json:"event_loop_sources"`
 	SessionRequired bool `json:"session_required"`
 	AlertPollIntervalSecs int `json:"alert_poll_interval_secs"`
@@ -114,9 +116,12 @@ type OrchestratorConfig struct {
 }
 
 type StorageConfig struct {
-	PostgresDSN string            `json:"postgres_dsn"`
-	ObjectStore ObjectStoreConfig `json:"object_store"`
-	WorkspaceDir string           `json:"workspace_dir"`
+	PostgresDSN     string            `json:"postgres_dsn"`
+	MaxOpenConns    int               `json:"max_open_conns"`
+	MaxIdleConns    int               `json:"max_idle_conns"`
+	ConnMaxLifetime string            `json:"conn_max_lifetime"`
+	ObjectStore     ObjectStoreConfig `json:"object_store"`
+	WorkspaceDir    string            `json:"workspace_dir"`
 }
 
 type ObjectStoreConfig struct {
@@ -279,10 +284,10 @@ func (c Config) Validate() error {
 		return errors.New("gateway.http_addr required")
 	}
 	if c.Policy.OPAURL == "" {
-		return errors.New("policy.opa_url required")
+		slog.Warn("policy.opa_url not set: gateway will start without OPA policy enforcement")
 	}
 	if c.Orchestrator.TemporalAddr == "" {
-		return errors.New("orchestrator.temporal_addr required")
+		slog.Warn("orchestrator.temporal_addr not set: gateway will start without Temporal workflow orchestration")
 	}
 	if c.Storage.PostgresDSN == "" {
 		return errors.New("storage.postgres_dsn required")
@@ -313,6 +318,9 @@ func (c Config) Validate() error {
 	}
 	if c.Sandbox.RequireUser && strings.TrimSpace(c.Sandbox.User) == "" {
 		return errors.New("sandbox.user required when sandbox.require_user is true")
+	}
+	if !c.Sandbox.Enforce {
+		slog.Warn("sandbox.enforce is disabled: tool commands will run without sandbox isolation")
 	}
 
 	if err := validateTokenAddr("connectors.prometheus", c.Connectors.Prometheus.Addr, c.Connectors.Prometheus.Token); err != nil {

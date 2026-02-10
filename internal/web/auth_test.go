@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"carapulse/internal/auth"
 )
 
 func tokenForClaims(t *testing.T, claims map[string]any) string {
@@ -33,6 +35,9 @@ func TestAuthMiddlewareRejectsMissing(t *testing.T) {
 }
 
 func TestAuthMiddlewareAcceptsBearer(t *testing.T) {
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+
 	token := tokenForClaims(t, map[string]any{
 		"sub":    "user1",
 		"email":  "user@example.com",
@@ -87,7 +92,7 @@ func TestActorFromContextMissing(t *testing.T) {
 
 func TestAuthMiddlewareRejectsIssuerMismatch(t *testing.T) {
 	SetAuthConfig(AuthConfig{Issuer: "issuer"})
-	t.Cleanup(func() { SetAuthConfig(AuthConfig{}) })
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
 
 	token := tokenForClaims(t, map[string]any{
 		"sub": "user1",
@@ -106,7 +111,7 @@ func TestAuthMiddlewareRejectsIssuerMismatch(t *testing.T) {
 
 func TestAuthMiddlewareRejectsAudienceMismatch(t *testing.T) {
 	SetAuthConfig(AuthConfig{Audience: "client"})
-	t.Cleanup(func() { SetAuthConfig(AuthConfig{}) })
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
 
 	token := tokenForClaims(t, map[string]any{
 		"sub": "user1",
@@ -124,8 +129,8 @@ func TestAuthMiddlewareRejectsAudienceMismatch(t *testing.T) {
 }
 
 func TestAuthMiddlewareAcceptsIssuerAudience(t *testing.T) {
-	SetAuthConfig(AuthConfig{Issuer: "issuer", Audience: "client"})
-	t.Cleanup(func() { SetAuthConfig(AuthConfig{}) })
+	SetAuthConfig(AuthConfig{Issuer: "issuer", Audience: "client", DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
 
 	token := tokenForClaims(t, map[string]any{
 		"sub": "user1",
@@ -170,9 +175,9 @@ func TestAudienceMatchesInvalidTypes(t *testing.T) {
 }
 
 func TestAuthMiddlewareRejectsExpiredToken(t *testing.T) {
-	oldTimeNow := timeNow
-	timeNow = func() time.Time { return time.Unix(2000000000, 0) }
-	t.Cleanup(func() { timeNow = oldTimeNow })
+	oldTimeNow := auth.TimeNow
+	auth.TimeNow = func() time.Time { return time.Unix(2000000000, 0) }
+	t.Cleanup(func() { auth.TimeNow = oldTimeNow })
 
 	token := tokenForClaims(t, map[string]any{
 		"sub": "user1",
@@ -190,9 +195,9 @@ func TestAuthMiddlewareRejectsExpiredToken(t *testing.T) {
 }
 
 func TestAuthMiddlewareRejectsNotYetValid(t *testing.T) {
-	oldTimeNow := timeNow
-	timeNow = func() time.Time { return time.Unix(1000000000, 0) }
-	t.Cleanup(func() { timeNow = oldTimeNow })
+	oldTimeNow := auth.TimeNow
+	auth.TimeNow = func() time.Time { return time.Unix(1000000000, 0) }
+	t.Cleanup(func() { auth.TimeNow = oldTimeNow })
 
 	token := tokenForClaims(t, map[string]any{
 		"sub": "user1",
@@ -210,9 +215,12 @@ func TestAuthMiddlewareRejectsNotYetValid(t *testing.T) {
 }
 
 func TestAuthMiddlewareAcceptsValidExp(t *testing.T) {
-	oldTimeNow := timeNow
-	timeNow = func() time.Time { return time.Unix(1000000000, 0) }
-	t.Cleanup(func() { timeNow = oldTimeNow })
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+
+	oldTimeNow := auth.TimeNow
+	auth.TimeNow = func() time.Time { return time.Unix(1000000000, 0) }
+	t.Cleanup(func() { auth.TimeNow = oldTimeNow })
 
 	token := tokenForClaims(t, map[string]any{
 		"sub": "user1",
@@ -236,7 +244,7 @@ func TestSetAuthConfigCopies(t *testing.T) {
 	if got.Issuer != "iss" || got.Audience != "aud" || !strings.Contains(got.JWKSURL, "jwks") {
 		t.Fatalf("config: %#v", got)
 	}
-	SetAuthConfig(AuthConfig{})
+	SetAuthConfig(AuthConfig{DevMode: true})
 }
 
 func TestAuthMiddlewareRejectsInvalidSignature(t *testing.T) {
@@ -245,13 +253,13 @@ func TestAuthMiddlewareRejectsInvalidSignature(t *testing.T) {
 	token := signToken(t, other, "kid", map[string]any{"sub": "user1"})
 
 	SetAuthConfig(AuthConfig{JWKSURL: "http://jwks"})
-	t.Cleanup(func() { SetAuthConfig(AuthConfig{}) })
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
 
-	oldFetch := fetchJWKS
-	fetchJWKS = func(url string) (JWKS, error) {
-		return JWKS{Keys: []JWK{jwkForKey(key.PublicKey, "kid")}}, nil
+	oldFetch := auth.FetchJWKS
+	auth.FetchJWKS = func(url string) (auth.JWKS, error) {
+		return auth.JWKS{Keys: []auth.JWK{jwkForKey(key.PublicKey, "kid")}}, nil
 	}
-	t.Cleanup(func() { fetchJWKS = oldFetch })
+	t.Cleanup(func() { auth.FetchJWKS = oldFetch })
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -269,13 +277,13 @@ func TestAuthMiddlewareAcceptsSignedToken(t *testing.T) {
 	token := signToken(t, key, "kid", map[string]any{"sub": "user1"})
 
 	SetAuthConfig(AuthConfig{JWKSURL: "http://jwks"})
-	t.Cleanup(func() { SetAuthConfig(AuthConfig{}) })
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
 
-	oldFetch := fetchJWKS
-	fetchJWKS = func(url string) (JWKS, error) {
-		return JWKS{Keys: []JWK{jwkForKey(key.PublicKey, "kid")}}, nil
+	oldFetch := auth.FetchJWKS
+	auth.FetchJWKS = func(url string) (auth.JWKS, error) {
+		return auth.JWKS{Keys: []auth.JWK{jwkForKey(key.PublicKey, "kid")}}, nil
 	}
-	t.Cleanup(func() { fetchJWKS = oldFetch })
+	t.Cleanup(func() { auth.FetchJWKS = oldFetch })
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -285,5 +293,47 @@ func TestAuthMiddlewareAcceptsSignedToken(t *testing.T) {
 	})).ServeHTTP(rw, req)
 	if rw.Code != http.StatusOK {
 		t.Fatalf("want 200 got %d", rw.Code)
+	}
+}
+
+func TestAuthMiddlewareRejectsNoJWKSURL(t *testing.T) {
+	SetAuthConfig(AuthConfig{})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+
+	token := tokenForClaims(t, map[string]any{
+		"sub": "user1",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rw := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rw, req)
+	if rw.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 got %d (SEC-02: empty JWKS URL must reject without DevMode)", rw.Code)
+	}
+}
+
+func TestAuthMiddlewareAcceptsDevMode(t *testing.T) {
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+
+	token := tokenForClaims(t, map[string]any{
+		"sub":   "user1",
+		"email": "dev@example.com",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rw := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actor, ok := ActorFromContext(r.Context())
+		if !ok || actor.ID != "user1" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rw, req)
+	if rw.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d (DevMode should skip signature verification)", rw.Code)
 	}
 }

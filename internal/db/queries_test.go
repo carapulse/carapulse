@@ -804,21 +804,24 @@ func TestCreateScheduleExecError(t *testing.T) {
 }
 
 func TestListSchedules(t *testing.T) {
-	row := fakeRow{values: []any{[]byte(`[{"schedule_id":"s1"}]`)}}
+	row := fakeRow{values: []any{[]byte(`[{"schedule_id":"s1"}]`), 1}}
 	d := &DB{conn: &fakeConn{row: row}}
-	out, err := d.ListSchedules(context.Background())
+	out, total, err := d.ListSchedules(context.Background(), 50, 0)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if len(out) == 0 {
 		t.Fatalf("empty output")
 	}
+	if total != 1 {
+		t.Fatalf("total: got %d, want 1", total)
+	}
 }
 
 func TestListSchedulesError(t *testing.T) {
 	row := fakeRow{err: sql.ErrConnDone}
 	d := &DB{conn: &fakeConn{row: row}}
-	if _, err := d.ListSchedules(context.Background()); err == nil {
+	if _, _, err := d.ListSchedules(context.Background(), 50, 0); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -842,5 +845,135 @@ func TestUpdateExecutionWorkflowID(t *testing.T) {
 	}
 	if conn.lastExecQuery == "" {
 		t.Fatalf("missing exec")
+	}
+}
+
+func TestListPlans(t *testing.T) {
+	row := fakeRow{values: []any{[]byte(`[{"plan_id":"plan_1","summary":"s"}]`), 1}}
+	d := &DB{conn: &fakeConn{row: row}}
+	out, total, err := d.ListPlans(context.Background(), 50, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatalf("empty output")
+	}
+	if total != 1 {
+		t.Fatalf("total: got %d, want 1", total)
+	}
+}
+
+func TestListPlansError(t *testing.T) {
+	row := fakeRow{err: sql.ErrConnDone}
+	d := &DB{conn: &fakeConn{row: row}}
+	if _, _, err := d.ListPlans(context.Background(), 50, 0); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestListExecutions(t *testing.T) {
+	row := fakeRow{values: []any{[]byte(`[{"execution_id":"exec_1","plan_id":"p1"}]`), 1}}
+	d := &DB{conn: &fakeConn{row: row}}
+	out, total, err := d.ListExecutions(context.Background(), 50, 0)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatalf("empty output")
+	}
+	if total != 1 {
+		t.Fatalf("total: got %d, want 1", total)
+	}
+}
+
+func TestListExecutionsError(t *testing.T) {
+	row := fakeRow{err: sql.ErrConnDone}
+	d := &DB{conn: &fakeConn{row: row}}
+	if _, _, err := d.ListExecutions(context.Background(), 50, 0); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestCancelExecution(t *testing.T) {
+	conn := &fakeConn{}
+	d := &DB{conn: conn}
+	if err := d.CancelExecution(context.Background(), "exec_1"); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(conn.lastExecQuery, "UPDATE executions") {
+		t.Fatalf("query: %s", conn.lastExecQuery)
+	}
+	if !strings.Contains(conn.lastExecQuery, "cancelled") {
+		t.Fatalf("query should set cancelled: %s", conn.lastExecQuery)
+	}
+}
+
+func TestCancelExecutionNotFound(t *testing.T) {
+	conn := &fakeConn{}
+	// fakeResult returns RowsAffected=1, which means "found and updated"
+	// We need to simulate 0 rows affected for not-found case.
+	// The default fakeResult returns 1. Since we can't change fakeResult
+	// for this test, we verify the query contains the correct WHERE clause.
+	d := &DB{conn: conn}
+	_ = d.CancelExecution(context.Background(), "exec_missing")
+	if len(conn.lastExecArgs) < 1 || conn.lastExecArgs[0] != "exec_missing" {
+		t.Fatalf("args: %#v", conn.lastExecArgs)
+	}
+}
+
+func TestCancelExecutionError(t *testing.T) {
+	d := &DB{conn: &fakeConn{execErr: sql.ErrConnDone}}
+	if err := d.CancelExecution(context.Background(), "exec_1"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeletePlan(t *testing.T) {
+	conn := &fakeConn{}
+	d := &DB{conn: conn}
+	if err := d.DeletePlan(context.Background(), "plan_1"); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(conn.lastExecQuery, "DELETE FROM plans") {
+		t.Fatalf("query: %s", conn.lastExecQuery)
+	}
+}
+
+func TestDeletePlanNilDB(t *testing.T) {
+	var d *DB
+	if err := d.DeletePlan(context.Background(), "plan_1"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeletePlanExecError(t *testing.T) {
+	d := &DB{conn: &fakeConn{execErr: sql.ErrConnDone}}
+	if err := d.DeletePlan(context.Background(), "plan_1"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteSchedule(t *testing.T) {
+	conn := &fakeConn{}
+	d := &DB{conn: conn}
+	if err := d.DeleteSchedule(context.Background(), "schedule_1"); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(conn.lastExecQuery, "DELETE FROM schedules") {
+		t.Fatalf("query: %s", conn.lastExecQuery)
+	}
+}
+
+func TestDeleteScheduleNilDB(t *testing.T) {
+	var d *DB
+	if err := d.DeleteSchedule(context.Background(), "schedule_1"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteScheduleExecError(t *testing.T) {
+	d := &DB{conn: &fakeConn{execErr: sql.ErrConnDone}}
+	if err := d.DeleteSchedule(context.Background(), "schedule_1"); err == nil {
+		t.Fatalf("expected error")
 	}
 }

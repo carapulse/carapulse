@@ -106,21 +106,24 @@ func TestCreateSessionWhitespaceOnly(t *testing.T) {
 }
 
 func TestListSessions(t *testing.T) {
-	conn := &fakeConn{row: fakeRow{values: []any{[]byte("[]")}}}
+	conn := &fakeConn{row: fakeRow{values: []any{[]byte("[]"), 0}}}
 	d := &DB{conn: conn}
-	out, err := d.ListSessions(context.Background())
+	out, total, err := d.ListSessions(context.Background(), 50, 0)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if string(out) != "[]" {
 		t.Fatalf("out: %s", out)
 	}
+	if total != 0 {
+		t.Fatalf("total: got %d, want 0", total)
+	}
 }
 
 func TestListSessionsScanError(t *testing.T) {
 	conn := &fakeConn{row: fakeRow{err: sql.ErrConnDone}}
 	d := &DB{conn: conn}
-	if _, err := d.ListSessions(context.Background()); err == nil {
+	if _, _, err := d.ListSessions(context.Background(), 50, 0); err == nil {
 		t.Fatalf("expected error")
 	}
 }

@@ -67,12 +67,12 @@ func (f *fakeDB) GetApprovalStatus(ctx context.Context, planID string) (string, 
 	return "approved", nil
 }
 
-func (f *fakeDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, error) {
-	return []byte("[]"), nil
+func (f *fakeDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
-func (f *fakeDB) ListContextServices(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (f *fakeDB) ListContextServices(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (f *fakeDB) IsSessionMember(ctx context.Context, sessionID, memberID string) (bool, error) {
@@ -83,16 +83,44 @@ func (f *fakeDB) CreateSchedule(ctx context.Context, payload []byte) (string, er
 	return "schedule_1", nil
 }
 
-func (f *fakeDB) ListSchedules(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (f *fakeDB) ListPlans(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
+}
+
+func (f *fakeDB) ListExecutions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
+}
+
+func (f *fakeDB) CancelExecution(ctx context.Context, executionID string) error {
+	return nil
+}
+
+func (f *fakeDB) DeletePlan(ctx context.Context, planID string) error {
+	return nil
+}
+
+func (f *fakeDB) DeleteSchedule(ctx context.Context, scheduleID string) error {
+	return nil
+}
+
+func (f *fakeDB) DeletePlaybook(ctx context.Context, playbookID string) error {
+	return nil
+}
+
+func (f *fakeDB) DeleteRunbook(ctx context.Context, runbookID string) error {
+	return nil
+}
+
+func (f *fakeDB) ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (f *fakeDB) CreatePlaybook(ctx context.Context, payload []byte) (string, error) {
 	return "playbook_1", nil
 }
 
-func (f *fakeDB) ListPlaybooks(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (f *fakeDB) ListPlaybooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (f *fakeDB) GetPlaybook(ctx context.Context, playbookID string) ([]byte, error) {
@@ -103,8 +131,8 @@ func (f *fakeDB) CreateRunbook(ctx context.Context, payload []byte) (string, err
 	return "runbook_1", nil
 }
 
-func (f *fakeDB) ListRunbooks(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (f *fakeDB) ListRunbooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (f *fakeDB) GetRunbook(ctx context.Context, runbookID string) ([]byte, error) {
@@ -151,16 +179,16 @@ func (e errorDB) GetApprovalStatus(ctx context.Context, planID string) (string, 
 	return "approved", nil
 }
 
-func (e errorDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, error) {
-	return nil, errTest
+func (e errorDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, int, error) {
+	return nil, 0, errTest
 }
 
 func (e errorDB) CreateRunbook(ctx context.Context, payload []byte) (string, error) {
 	return "", errTest
 }
 
-func (e errorDB) ListRunbooks(ctx context.Context) ([]byte, error) {
-	return nil, errTest
+func (e errorDB) ListRunbooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
 }
 
 func (e errorDB) GetRunbook(ctx context.Context, runbookID string) ([]byte, error) {
@@ -171,20 +199,48 @@ func (e errorDB) CreateSchedule(ctx context.Context, payload []byte) (string, er
 	return "", errTest
 }
 
-func (e errorDB) ListSchedules(ctx context.Context) ([]byte, error) {
-	return nil, errTest
+func (e errorDB) ListPlans(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
 }
 
-func (e errorDB) ListContextServices(ctx context.Context) ([]byte, error) {
-	return nil, errTest
+func (e errorDB) ListExecutions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
+}
+
+func (e errorDB) CancelExecution(ctx context.Context, executionID string) error {
+	return errTest
+}
+
+func (e errorDB) DeletePlan(ctx context.Context, planID string) error {
+	return errTest
+}
+
+func (e errorDB) DeleteSchedule(ctx context.Context, scheduleID string) error {
+	return errTest
+}
+
+func (e errorDB) DeletePlaybook(ctx context.Context, playbookID string) error {
+	return errTest
+}
+
+func (e errorDB) DeleteRunbook(ctx context.Context, runbookID string) error {
+	return errTest
+}
+
+func (e errorDB) ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
+}
+
+func (e errorDB) ListContextServices(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
 }
 
 func (e errorDB) CreatePlaybook(ctx context.Context, payload []byte) (string, error) {
 	return "", errTest
 }
 
-func (e errorDB) ListPlaybooks(ctx context.Context) ([]byte, error) {
-	return nil, errTest
+func (e errorDB) ListPlaybooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
 }
 
 func (e errorDB) GetPlaybook(ctx context.Context, playbookID string) ([]byte, error) {
@@ -223,28 +279,56 @@ func (a *approvalTrackingDB) UpdateApprovalStatusByPlan(ctx context.Context, pla
 	return nil
 }
 
-func (a *approvalTrackingDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, error) {
-	return []byte("[]"), nil
+func (a *approvalTrackingDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
-func (a *approvalTrackingDB) ListContextServices(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (a *approvalTrackingDB) ListContextServices(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (a *approvalTrackingDB) CreateSchedule(ctx context.Context, payload []byte) (string, error) {
 	return "schedule_1", nil
 }
 
-func (a *approvalTrackingDB) ListSchedules(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (a *approvalTrackingDB) ListPlans(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
+}
+
+func (a *approvalTrackingDB) ListExecutions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
+}
+
+func (a *approvalTrackingDB) CancelExecution(ctx context.Context, executionID string) error {
+	return nil
+}
+
+func (a *approvalTrackingDB) DeletePlan(ctx context.Context, planID string) error {
+	return nil
+}
+
+func (a *approvalTrackingDB) DeleteSchedule(ctx context.Context, scheduleID string) error {
+	return nil
+}
+
+func (a *approvalTrackingDB) DeletePlaybook(ctx context.Context, playbookID string) error {
+	return nil
+}
+
+func (a *approvalTrackingDB) DeleteRunbook(ctx context.Context, runbookID string) error {
+	return nil
+}
+
+func (a *approvalTrackingDB) ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (a *approvalTrackingDB) CreatePlaybook(ctx context.Context, payload []byte) (string, error) {
 	return "playbook_1", nil
 }
 
-func (a *approvalTrackingDB) ListPlaybooks(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (a *approvalTrackingDB) ListPlaybooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (a *approvalTrackingDB) GetPlaybook(ctx context.Context, playbookID string) ([]byte, error) {
@@ -255,8 +339,8 @@ func (a *approvalTrackingDB) CreateRunbook(ctx context.Context, payload []byte) 
 	return "runbook_1", nil
 }
 
-func (a *approvalTrackingDB) ListRunbooks(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (a *approvalTrackingDB) ListRunbooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (a *approvalTrackingDB) GetRunbook(ctx context.Context, runbookID string) ([]byte, error) {
@@ -323,16 +407,16 @@ func (m missingExecDB) UpdateApprovalStatusByPlan(ctx context.Context, planID, s
 	return nil
 }
 
-func (m missingExecDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, error) {
-	return []byte("[]"), nil
+func (m missingExecDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
-func (m missingExecDB) ListContextServices(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (m missingExecDB) ListContextServices(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
-func (m missingExecDB) ListContextSnapshots(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (m missingExecDB) ListContextSnapshots(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (m missingExecDB) GetContextSnapshot(ctx context.Context, snapshotID string) ([]byte, error) {
@@ -343,16 +427,44 @@ func (m missingExecDB) CreateSchedule(ctx context.Context, payload []byte) (stri
 	return "schedule_1", nil
 }
 
-func (m missingExecDB) ListSchedules(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (m missingExecDB) ListPlans(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
+}
+
+func (m missingExecDB) ListExecutions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
+}
+
+func (m missingExecDB) CancelExecution(ctx context.Context, executionID string) error {
+	return nil
+}
+
+func (m missingExecDB) DeletePlan(ctx context.Context, planID string) error {
+	return nil
+}
+
+func (m missingExecDB) DeleteSchedule(ctx context.Context, scheduleID string) error {
+	return nil
+}
+
+func (m missingExecDB) DeletePlaybook(ctx context.Context, playbookID string) error {
+	return nil
+}
+
+func (m missingExecDB) DeleteRunbook(ctx context.Context, runbookID string) error {
+	return nil
+}
+
+func (m missingExecDB) ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (m missingExecDB) CreatePlaybook(ctx context.Context, payload []byte) (string, error) {
 	return "playbook_1", nil
 }
 
-func (m missingExecDB) ListPlaybooks(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (m missingExecDB) ListPlaybooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (m missingExecDB) GetPlaybook(ctx context.Context, playbookID string) ([]byte, error) {
@@ -363,8 +475,8 @@ func (m missingExecDB) CreateRunbook(ctx context.Context, payload []byte) (strin
 	return "runbook_1", nil
 }
 
-func (m missingExecDB) ListRunbooks(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (m missingExecDB) ListRunbooks(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (m missingExecDB) GetRunbook(ctx context.Context, runbookID string) ([]byte, error) {
@@ -375,16 +487,16 @@ func (m missingExecDB) CreateWorkflowCatalog(ctx context.Context, payload []byte
 	return "workflow_1", nil
 }
 
-func (m missingExecDB) ListWorkflowCatalog(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (m missingExecDB) ListWorkflowCatalog(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (m missingExecDB) CreateSession(ctx context.Context, payload []byte) (string, error) {
 	return "session_1", nil
 }
 
-func (m missingExecDB) ListSessions(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (m missingExecDB) ListSessions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (m missingExecDB) GetSession(ctx context.Context, sessionID string) ([]byte, error) {
@@ -434,9 +546,9 @@ type auditTrackingDB struct {
 	filter db.AuditFilter
 }
 
-func (a *auditTrackingDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, error) {
+func (a *auditTrackingDB) ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, int, error) {
 	a.filter = filter
-	return []byte("[]"), nil
+	return []byte("[]"), 0, nil
 }
 
 type fakeApprovalCreator struct {
@@ -919,12 +1031,116 @@ func TestHandlePlansDBUnavailable(t *testing.T) {
 }
 
 func TestHandlePlansMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/v1/plans", nil)
-	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	req := httptest.NewRequest(http.MethodDelete, "/v1/plans", nil)
+	req.Header.Set("Authorization", testToken)
 	w := httptest.NewRecorder()
 	srv := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(srv.handlePlans)).ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandlePlansGet(t *testing.T) {
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+	db := &fakeDB{}
+	req := httptest.NewRequest(http.MethodGet, "/v1/plans", nil)
+	req.Header.Set("Authorization", testToken)
+	req.Header.Set("X-Tenant-Id", "t")
+	w := httptest.NewRecorder()
+	srv := &Server{Mux: http.NewServeMux(), DB: db, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(srv.handlePlans)).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["pagination"] == nil {
+		t.Fatalf("missing pagination")
+	}
+}
+
+func TestHandlePlansGetNoTenant(t *testing.T) {
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+	req := httptest.NewRequest(http.MethodGet, "/v1/plans", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	srv := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(srv.handlePlans)).ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandleExecutionsGet(t *testing.T) {
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+	db := &fakeDB{}
+	req := httptest.NewRequest(http.MethodGet, "/v1/executions", nil)
+	req.Header.Set("Authorization", testToken)
+	req.Header.Set("X-Tenant-Id", "t")
+	w := httptest.NewRecorder()
+	srv := &Server{Mux: http.NewServeMux(), DB: db, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(srv.handleExecutions)).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["pagination"] == nil {
+		t.Fatalf("missing pagination")
+	}
+}
+
+func TestHandleExecutionsGetNoTenant(t *testing.T) {
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+	req := httptest.NewRequest(http.MethodGet, "/v1/executions", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	srv := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(srv.handleExecutions)).ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandleExecutionByIDCancel(t *testing.T) {
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+	db := &fakeDB{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/executions/exec_1/cancel", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	srv := &Server{Mux: http.NewServeMux(), DB: db, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(srv.handleExecutionByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "cancelled" {
+		t.Fatalf("status: %v", resp["status"])
+	}
+}
+
+func TestHandleExecutionByIDCancelDBError(t *testing.T) {
+	SetAuthConfig(AuthConfig{DevMode: true})
+	t.Cleanup(func() { SetAuthConfig(AuthConfig{DevMode: true}) })
+	req := httptest.NewRequest(http.MethodPost, "/v1/executions/exec_1/cancel", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	srv := &Server{Mux: http.NewServeMux(), DB: errorDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(srv.handleExecutionByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status: %d", w.Code)
 	}
 }
@@ -1351,6 +1567,83 @@ func TestHandlePlanMethodNotAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(server.handlePlanByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandlePlanDeleteOK(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/plans/plan_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(server.handlePlanByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandlePlanDeleteNoDB(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/plans/plan_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	server := &Server{Mux: http.NewServeMux(), Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(server.handlePlanByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandlePlanDeleteDBError(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/plans/plan_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	server := &Server{Mux: http.NewServeMux(), DB: errorDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(server.handlePlanByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandleScheduleByIDDeleteOK(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/schedules/schedule_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(server.handleScheduleByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleScheduleByIDDeleteNoDB(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/schedules/schedule_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	server := &Server{Mux: http.NewServeMux(), Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(server.handleScheduleByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandleScheduleByIDDeleteDBError(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/schedules/schedule_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	server := &Server{Mux: http.NewServeMux(), DB: errorDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(server.handleScheduleByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandleScheduleByIDMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/schedules/schedule_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(server.handleScheduleByID)).ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status: %d", w.Code)
 	}
@@ -1892,22 +2185,29 @@ func TestHandleHookEmptyBodyWithDB(t *testing.T) {
 	}
 }
 
-func TestHandleHookAutoApproveLow(t *testing.T) {
+func TestHandleHookAutoApproveLowIgnoredForWebhooks(t *testing.T) {
 	db := &fakeDB{}
+	approvals := &fakeApprovalCreator{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/hooks/deploy", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
 	w := httptest.NewRecorder()
-	server := &Server{Mux: http.NewServeMux(), DB: db, AutoApproveLow: true, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	server := &Server{Mux: http.NewServeMux(), DB: db, Approvals: approvals, AutoApproveLow: true, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(server.handleHook)).ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: %d", w.Code)
 	}
-	if db.updateStatus != "approved" {
-		t.Fatalf("approval status: %s", db.updateStatus)
+	// Webhook-triggered plans must never be auto-approved regardless of
+	// AutoApproveLow setting. The approval should be created externally
+	// (pending human review), NOT auto-approved.
+	if db.updateStatus == "approved" {
+		t.Fatalf("webhook plan was auto-approved; expected pending human approval")
+	}
+	if !approvals.called {
+		t.Fatalf("external approval not created for webhook plan")
 	}
 }
 
-func TestHandleHookAutoApproveCreateApprovalError(t *testing.T) {
+func TestHandleHookWebhookApprovalCreateError(t *testing.T) {
 	db := &approvalErrorDB{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/hooks/deploy", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
@@ -1915,18 +2215,6 @@ func TestHandleHookAutoApproveCreateApprovalError(t *testing.T) {
 	server := &Server{Mux: http.NewServeMux(), DB: db, AutoApproveLow: true, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(server.handleHook)).ServeHTTP(w, req)
 	if w.Code != http.StatusBadGateway {
-		t.Fatalf("status: %d", w.Code)
-	}
-}
-
-func TestHandleHookAutoApproveUpdateError(t *testing.T) {
-	db := &updateErrorDB{}
-	req := httptest.NewRequest(http.MethodPost, "/v1/hooks/deploy", bytes.NewReader([]byte(`{}`)))
-	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
-	w := httptest.NewRecorder()
-	server := &Server{Mux: http.NewServeMux(), DB: db, AutoApproveLow: true, Policy: &policy.Evaluator{Checker: allowChecker{}}}
-	AuthMiddleware(http.HandlerFunc(server.handleHook)).ServeHTTP(w, req)
-	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status: %d", w.Code)
 	}
 }
@@ -2625,8 +2913,8 @@ func TestNewServerNilDB(t *testing.T) {
 	}
 }
 
-func (f *fakeDB) ListContextSnapshots(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (f *fakeDB) ListContextSnapshots(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (f *fakeDB) GetContextSnapshot(ctx context.Context, snapshotID string) ([]byte, error) {
@@ -2637,8 +2925,8 @@ func (f *fakeDB) CreateSession(ctx context.Context, payload []byte) (string, err
 	return "session_1", nil
 }
 
-func (f *fakeDB) ListSessions(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (f *fakeDB) ListSessions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (f *fakeDB) GetSession(ctx context.Context, sessionID string) ([]byte, error) {
@@ -2665,12 +2953,12 @@ func (f *fakeDB) CreateWorkflowCatalog(ctx context.Context, payload []byte) (str
 	return "workflow_1", nil
 }
 
-func (f *fakeDB) ListWorkflowCatalog(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (f *fakeDB) ListWorkflowCatalog(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
-func (e errorDB) ListContextSnapshots(ctx context.Context) ([]byte, error) {
-	return nil, errTest
+func (e errorDB) ListContextSnapshots(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
 }
 
 func (e errorDB) GetContextSnapshot(ctx context.Context, snapshotID string) ([]byte, error) {
@@ -2681,8 +2969,8 @@ func (e errorDB) CreateSession(ctx context.Context, payload []byte) (string, err
 	return "", errTest
 }
 
-func (e errorDB) ListSessions(ctx context.Context) ([]byte, error) {
-	return nil, errTest
+func (e errorDB) ListSessions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
 }
 
 func (e errorDB) GetSession(ctx context.Context, sessionID string) ([]byte, error) {
@@ -2713,12 +3001,12 @@ func (e errorDB) CreateWorkflowCatalog(ctx context.Context, payload []byte) (str
 	return "", errTest
 }
 
-func (e errorDB) ListWorkflowCatalog(ctx context.Context) ([]byte, error) {
-	return nil, errTest
+func (e errorDB) ListWorkflowCatalog(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errTest
 }
 
-func (a approvalTrackingDB) ListContextSnapshots(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (a approvalTrackingDB) ListContextSnapshots(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (a approvalTrackingDB) GetContextSnapshot(ctx context.Context, snapshotID string) ([]byte, error) {
@@ -2729,8 +3017,8 @@ func (a approvalTrackingDB) CreateSession(ctx context.Context, payload []byte) (
 	return "session_1", nil
 }
 
-func (a approvalTrackingDB) ListSessions(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (a approvalTrackingDB) ListSessions(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }
 
 func (a approvalTrackingDB) GetSession(ctx context.Context, sessionID string) ([]byte, error) {
@@ -2761,6 +3049,6 @@ func (a approvalTrackingDB) CreateWorkflowCatalog(ctx context.Context, payload [
 	return "workflow_1", nil
 }
 
-func (a approvalTrackingDB) ListWorkflowCatalog(ctx context.Context) ([]byte, error) {
-	return []byte("[]"), nil
+func (a approvalTrackingDB) ListWorkflowCatalog(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return []byte("[]"), 0, nil
 }

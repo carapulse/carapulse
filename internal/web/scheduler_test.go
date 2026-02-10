@@ -15,8 +15,8 @@ type scheduleStoreStub struct {
 	updatedAt time.Time
 }
 
-func (s *scheduleStoreStub) ListSchedules(ctx context.Context) ([]byte, error) {
-	return s.payload, nil
+func (s *scheduleStoreStub) ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return s.payload, 0, nil
 }
 
 func (s *scheduleStoreStub) CreatePlan(ctx context.Context, payload []byte) (string, error) {
@@ -90,8 +90,8 @@ func TestParseSchedules(t *testing.T) {
 
 type errScheduleStore struct{}
 
-func (e errScheduleStore) ListSchedules(ctx context.Context) ([]byte, error) {
-	return nil, errors.New("boom")
+func (e errScheduleStore) ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error) {
+	return nil, 0, errors.New("boom")
 }
 
 func (e errScheduleStore) CreatePlan(ctx context.Context, payload []byte) (string, error) {

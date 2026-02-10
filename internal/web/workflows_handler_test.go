@@ -24,8 +24,11 @@ func TestHandleWorkflowsGet(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp["workflows"] == nil {
-		t.Fatalf("expected workflows key")
+	if resp["data"] == nil {
+		t.Fatalf("expected data key")
+	}
+	if resp["pagination"] == nil {
+		t.Fatalf("expected pagination key")
 	}
 }
 
@@ -108,8 +111,9 @@ func TestHandleWorkflowByIDGetNoTenant(t *testing.T) {
 
 func TestHandleWorkflowByIDStartPost(t *testing.T) {
 	srv := &Server{
-		DB:     &fakeDB{},
-		Policy: &policy.Evaluator{Checker: allowChecker{}},
+		DB:       &fakeDB{},
+		Policy:   &policy.Evaluator{Checker: allowChecker{}},
+		Executor: &fakeExecutor{},
 	}
 	ctx := validContext()
 	body, _ := json.Marshal(WorkflowStartRequest{
@@ -129,6 +133,26 @@ func TestHandleWorkflowByIDStartPost(t *testing.T) {
 	}
 	if resp.PlanID == "" {
 		t.Fatalf("expected plan_id")
+	}
+}
+
+func TestHandleWorkflowByIDStartNoExecutor(t *testing.T) {
+	srv := &Server{
+		DB:     &fakeDB{},
+		Policy: &policy.Evaluator{Checker: allowChecker{}},
+		// Executor intentionally nil — Temporal not configured
+	}
+	ctx := validContext()
+	body, _ := json.Marshal(WorkflowStartRequest{
+		Context: ctx,
+		Input:   map[string]any{"argocd_app": "myapp"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/workflows/gitops_deploy/start", bytes.NewReader(body))
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(srv.handleWorkflowByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when no executor, got: %d body: %s", w.Code, w.Body.String())
 	}
 }
 

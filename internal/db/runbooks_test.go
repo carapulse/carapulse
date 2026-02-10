@@ -31,9 +31,9 @@ func TestCreateRunbook(t *testing.T) {
 }
 
 func TestListRunbooks(t *testing.T) {
-	conn := &fakeConn{row: fakeRow{values: []any{[]byte(`[]`)}}}
+	conn := &fakeConn{row: fakeRow{values: []any{[]byte(`[]`), 0}}}
 	d := &DB{conn: conn}
-	out, err := d.ListRunbooks(context.Background())
+	out, _, err := d.ListRunbooks(context.Background(), 50, 0)
 	if err != nil || string(out) != "[]" {
 		t.Fatalf("out: %s err: %v", string(out), err)
 	}
@@ -57,5 +57,30 @@ func TestGetRunbookOK(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "\"runbook_id\"") {
 		t.Fatalf("out: %s", string(out))
+	}
+}
+
+func TestDeleteRunbook(t *testing.T) {
+	conn := &fakeConn{}
+	d := &DB{conn: conn}
+	if err := d.DeleteRunbook(context.Background(), "rb_1"); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(conn.lastExecQuery, "DELETE FROM runbooks") {
+		t.Fatalf("query: %s", conn.lastExecQuery)
+	}
+}
+
+func TestDeleteRunbookNilDB(t *testing.T) {
+	var d *DB
+	if err := d.DeleteRunbook(context.Background(), "rb_1"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteRunbookExecError(t *testing.T) {
+	d := &DB{conn: &fakeConn{execErr: sql.ErrConnDone}}
+	if err := d.DeleteRunbook(context.Background(), "rb_1"); err == nil {
+		t.Fatalf("expected error")
 	}
 }

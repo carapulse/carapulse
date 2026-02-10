@@ -55,14 +55,23 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "policy denied", http.StatusForbidden)
 		return
 	}
+	limit, offset := parsePagination(r)
 	if s.DB != nil {
-		if payload, err := s.DB.ListWorkflowCatalog(r.Context()); err == nil && len(payload) > 0 {
+		if payload, total, err := s.DB.ListWorkflowCatalog(r.Context(), limit, offset); err == nil && len(payload) > 0 {
 			filtered, err := filterJSONByTenant(payload, tenantID, true)
 			if err != nil {
 				http.Error(w, "encode error", http.StatusInternalServerError)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"workflows": json.RawMessage(filtered)})
+			resp := map[string]any{
+				"data": json.RawMessage(filtered),
+				"pagination": PaginationMeta{
+					Limit:  limit,
+					Offset: offset,
+					Total:  total,
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 	}
@@ -90,7 +99,7 @@ func (s *Server) handleWorkflowByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.DB != nil {
-			if payload, err := s.DB.ListWorkflowCatalog(r.Context()); err == nil && len(payload) > 0 {
+			if payload, _, err := s.DB.ListWorkflowCatalog(r.Context(), 200, 0); err == nil && len(payload) > 0 {
 				filtered, err := filterJSONByTenant(payload, tenantID, true)
 				if err != nil {
 					http.Error(w, "encode error", http.StatusInternalServerError)
@@ -115,6 +124,7 @@ func (s *Server) handleWorkflowByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var req map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -160,6 +170,7 @@ func (s *Server) handleWorkflowByID(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req WorkflowStartRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -204,6 +215,10 @@ func (s *Server) handleWorkflowByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.auditEvent(r.Context(), "workflow.start", "deny", req.Context, "policy decision "+dec.Decision)
 		http.Error(w, "policy denied", http.StatusForbidden)
+		return
+	}
+	if s.Executor == nil {
+		http.Error(w, `{"error":"temporal not configured"}`, http.StatusServiceUnavailable)
 		return
 	}
 	plan := map[string]any{
@@ -254,6 +269,17 @@ func (s *Server) handleWorkflowByID(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.Executor != nil && (!approvalRequired || risk == "low" && s.AutoApproveLow) {
+		if checker, ok := s.DB.(ActiveExecutionChecker); ok {
+			active, err := checker.HasActiveExecution(r.Context(), planID)
+			if err != nil {
+				http.Error(w, "db error", http.StatusInternalServerError)
+				return
+			}
+			if active {
+				http.Error(w, "execution already in progress", http.StatusConflict)
+				return
+			}
+		}
 		execID, err = s.DB.CreateExecution(r.Context(), planID)
 		if err != nil {
 			http.Error(w, "db error", http.StatusInternalServerError)

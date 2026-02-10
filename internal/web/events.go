@@ -94,6 +94,7 @@ type LogHub struct {
 	subs     map[string]map[int]chan LogLine
 	history  map[string][]LogLine
 	maxLines int
+	maxKeys  int
 }
 
 func NewLogHub() *LogHub {
@@ -101,6 +102,7 @@ func NewLogHub() *LogHub {
 		subs:     make(map[string]map[int]chan LogLine),
 		history:  make(map[string][]LogLine),
 		maxLines: 200,
+		maxKeys:  500,
 	}
 }
 
@@ -147,6 +149,21 @@ func (h *LogHub) Append(line LogLine) {
 		history = history[len(history)-h.maxLines:]
 	}
 	h.history[line.ExecutionID] = history
+	// Evict oldest history entries when we have too many keys to prevent
+	// unbounded memory growth over the lifetime of the process.
+	if h.maxKeys > 0 && len(h.history) > h.maxKeys {
+		for key := range h.history {
+			if key == line.ExecutionID {
+				continue
+			}
+			if _, hasSub := h.subs[key]; !hasSub {
+				delete(h.history, key)
+			}
+			if len(h.history) <= h.maxKeys {
+				break
+			}
+		}
+	}
 	for _, ch := range h.subs[line.ExecutionID] {
 		select {
 		case ch <- line:

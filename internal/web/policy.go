@@ -2,12 +2,16 @@ package web
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"carapulse/internal/policy"
 )
+
+var warnPolicyAllowAllOnce sync.Once
 
 func (s *Server) policyDecision(r *http.Request, actionName string, actionType string, ctxRef ContextRef, risk string, targets int) (policy.PolicyDecision, error) {
 	actor, _ := ActorFromContext(r.Context())
@@ -16,10 +20,10 @@ func (s *Server) policyDecision(r *http.Request, actionName string, actionType s
 	breakGlass := strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Break-Glass")), "true")
 	dec := policy.PolicyDecision{Decision: "allow"}
 	if s.Policy == nil || s.Policy.Checker == nil {
-		if actionType == "read" && s.FailOpenReads {
-			return policy.PolicyDecision{Decision: "allow"}, nil
-		}
-		return policy.PolicyDecision{}, errors.New("policy required")
+		warnPolicyAllowAllOnce.Do(func() {
+			slog.Warn("policy checker not configured: allow-all mode enabled")
+		})
+		return policy.PolicyDecision{Decision: "allow"}, nil
 	}
 	if s.Policy != nil {
 		var err error

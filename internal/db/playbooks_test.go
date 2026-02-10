@@ -28,9 +28,9 @@ func TestCreatePlaybook(t *testing.T) {
 }
 
 func TestListPlaybooks(t *testing.T) {
-	conn := &fakeConn{row: fakeRow{values: []any{[]byte(`[]`)}}}
+	conn := &fakeConn{row: fakeRow{values: []any{[]byte(`[]`), 0}}}
 	d := &DB{conn: conn}
-	out, err := d.ListPlaybooks(context.Background())
+	out, _, err := d.ListPlaybooks(context.Background(), 50, 0)
 	if err != nil || string(out) != "[]" {
 		t.Fatalf("out: %s err: %v", string(out), err)
 	}
@@ -58,5 +58,30 @@ func TestGetPlaybookOK(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "\"playbook_id\"") {
 		t.Fatalf("out: %s", string(out))
+	}
+}
+
+func TestDeletePlaybook(t *testing.T) {
+	conn := &fakeConn{}
+	d := &DB{conn: conn}
+	if err := d.DeletePlaybook(context.Background(), "pb_1"); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(conn.lastExecQuery, "DELETE FROM playbooks") {
+		t.Fatalf("query: %s", conn.lastExecQuery)
+	}
+}
+
+func TestDeletePlaybookNilDB(t *testing.T) {
+	var d *DB
+	if err := d.DeletePlaybook(context.Background(), "pb_1"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeletePlaybookExecError(t *testing.T) {
+	d := &DB{conn: &fakeConn{execErr: sql.ErrConnDone}}
+	if err := d.DeletePlaybook(context.Background(), "pb_1"); err == nil {
+		t.Fatalf("expected error")
 	}
 }

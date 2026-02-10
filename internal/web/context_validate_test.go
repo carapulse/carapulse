@@ -21,3 +21,21 @@ func TestValidateContextRefStrict(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 }
+
+func TestValidateContextRefTenantOnly(t *testing.T) {
+	if err := validateContextRefTenantOnly(ContextRef{}); err == nil {
+		t.Fatalf("expected error")
+	}
+	if err := validateContextRefTenantOnly(ContextRef{TenantID: "t"}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+}
+
+func TestValidateContextRefMinimal(t *testing.T) {
+	if err := validateContextRefMinimal(ContextRef{TenantID: "t"}); err == nil {
+		t.Fatalf("expected error")
+	}
+	if err := validateContextRefMinimal(ContextRef{TenantID: "t", Environment: "staging"}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+}

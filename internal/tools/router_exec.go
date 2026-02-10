@@ -75,6 +75,9 @@ func (r *Router) Execute(ctx context.Context, req ExecuteRequest, sandbox *Sandb
 				defer cleanup()
 			}
 			cmd := buildCmd(tool.Name, req.Action, input)
+			if err := ValidateToolArgs(cmd); err != nil {
+				return ExecuteResponse{ToolCallID: callID}, err
+			}
 			out, err := sandbox.Run(ctx, cmd)
 			if hub != nil {
 				level := "info"

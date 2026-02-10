@@ -9,34 +9,43 @@ func TestValidateMissing(t *testing.T) {
 	}
 }
 
-func TestValidateMissingPolicy(t *testing.T) {
+func TestValidateOPAOptional(t *testing.T) {
 	cfg := Config{}
 	cfg.Gateway.HTTPAddr = ":8080"
-	if err := cfg.Validate(); err == nil {
-		t.Fatalf("expected error")
+	cfg.Storage.PostgresDSN = "dsn"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("OPA should be optional, got: %v", err)
 	}
 }
 
-func TestValidateMissingOrchestrator(t *testing.T) {
+func TestValidateTemporalOptional(t *testing.T) {
 	cfg := Config{}
 	cfg.Gateway.HTTPAddr = ":8080"
+	cfg.Storage.PostgresDSN = "dsn"
 	cfg.Policy.OPAURL = "http://opa"
-	if err := cfg.Validate(); err == nil {
-		t.Fatalf("expected error")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Temporal should be optional, got: %v", err)
 	}
 }
 
 func TestValidateMissingStorage(t *testing.T) {
 	cfg := Config{}
 	cfg.Gateway.HTTPAddr = ":8080"
-	cfg.Policy.OPAURL = "http://opa"
-	cfg.Orchestrator.TemporalAddr = "temporal"
 	if err := cfg.Validate(); err == nil {
-		t.Fatalf("expected error")
+		t.Fatalf("expected error for missing storage")
 	}
 }
 
 func TestValidateOK(t *testing.T) {
+	cfg := Config{}
+	cfg.Gateway.HTTPAddr = ":8080"
+	cfg.Storage.PostgresDSN = "dsn"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+}
+
+func TestValidateOKFull(t *testing.T) {
 	cfg := Config{}
 	cfg.Gateway.HTTPAddr = ":8080"
 	cfg.Policy.OPAURL = "http://opa"
@@ -47,12 +56,26 @@ func TestValidateOK(t *testing.T) {
 	}
 }
 
+func TestValidateStillRequiresHTTPAddr(t *testing.T) {
+	cfg := Config{}
+	cfg.Storage.PostgresDSN = "dsn"
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error for missing gateway.http_addr")
+	}
+}
+
+func TestValidateStillRequiresPostgresDSN(t *testing.T) {
+	cfg := Config{}
+	cfg.Gateway.HTTPAddr = ":8080"
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error for missing storage.postgres_dsn")
+	}
+}
+
 func baseValidConfig() Config {
 	return Config{
-		Gateway:      GatewayConfig{HTTPAddr: ":8080"},
-		Policy:       PolicyConfig{OPAURL: "http://opa"},
-		Orchestrator: OrchestratorConfig{TemporalAddr: "temporal"},
-		Storage:      StorageConfig{PostgresDSN: "dsn"},
+		Gateway: GatewayConfig{HTTPAddr: ":8080"},
+		Storage: StorageConfig{PostgresDSN: "dsn"},
 	}
 }
 

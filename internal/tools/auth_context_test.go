@@ -3,6 +3,8 @@ package tools
 import (
 	"testing"
 	"time"
+
+	"carapulse/internal/auth"
 )
 
 func TestValidateClaims(t *testing.T) {
@@ -19,9 +21,9 @@ func TestValidateClaims(t *testing.T) {
 }
 
 func TestValidateClaimsExpired(t *testing.T) {
-	oldTimeNow := timeNow
-	timeNow = func() time.Time { return time.Unix(2000000000, 0) }
-	t.Cleanup(func() { timeNow = oldTimeNow })
+	oldTimeNow := auth.TimeNow
+	auth.TimeNow = func() time.Time { return time.Unix(2000000000, 0) }
+	t.Cleanup(func() { auth.TimeNow = oldTimeNow })
 
 	claims := JWTPayload{Iss: "iss", Aud: "aud", Exp: 1000000000}
 	if err := validateClaims(claims, AuthConfig{Issuer: "iss", Audience: "aud"}); err == nil {
@@ -30,9 +32,9 @@ func TestValidateClaimsExpired(t *testing.T) {
 }
 
 func TestValidateClaimsNotYetValid(t *testing.T) {
-	oldTimeNow := timeNow
-	timeNow = func() time.Time { return time.Unix(1000000000, 0) }
-	t.Cleanup(func() { timeNow = oldTimeNow })
+	oldTimeNow := auth.TimeNow
+	auth.TimeNow = func() time.Time { return time.Unix(1000000000, 0) }
+	t.Cleanup(func() { auth.TimeNow = oldTimeNow })
 
 	claims := JWTPayload{Iss: "iss", Aud: "aud", Nbf: 2000000000}
 	if err := validateClaims(claims, AuthConfig{Issuer: "iss", Audience: "aud"}); err == nil {
@@ -41,9 +43,9 @@ func TestValidateClaimsNotYetValid(t *testing.T) {
 }
 
 func TestValidateClaimsValidExp(t *testing.T) {
-	oldTimeNow := timeNow
-	timeNow = func() time.Time { return time.Unix(1000000000, 0) }
-	t.Cleanup(func() { timeNow = oldTimeNow })
+	oldTimeNow := auth.TimeNow
+	auth.TimeNow = func() time.Time { return time.Unix(1000000000, 0) }
+	t.Cleanup(func() { auth.TimeNow = oldTimeNow })
 
 	claims := JWTPayload{Iss: "iss", Aud: "aud", Exp: 2000000000}
 	if err := validateClaims(claims, AuthConfig{Issuer: "iss", Audience: "aud"}); err != nil {

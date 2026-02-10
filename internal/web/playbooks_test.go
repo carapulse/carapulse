@@ -197,3 +197,36 @@ func TestHandlePlaybooksPostTenantFromHeader(t *testing.T) {
 		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestHandlePlaybookByIDDelete(t *testing.T) {
+	srv := &Server{DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	req := httptest.NewRequest(http.MethodDelete, "/v1/playbooks/playbook_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(srv.handlePlaybookByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandlePlaybookByIDDeleteNoDB(t *testing.T) {
+	srv := &Server{Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	req := httptest.NewRequest(http.MethodDelete, "/v1/playbooks/playbook_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(srv.handlePlaybookByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandlePlaybookByIDDeleteDBError(t *testing.T) {
+	srv := &Server{DB: errorDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	req := httptest.NewRequest(http.MethodDelete, "/v1/playbooks/playbook_1", nil)
+	req.Header.Set("Authorization", testToken)
+	w := httptest.NewRecorder()
+	AuthMiddleware(http.HandlerFunc(srv.handlePlaybookByID)).ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status: %d", w.Code)
+	}
+}

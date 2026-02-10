@@ -124,6 +124,8 @@ func (s *Server) authorize(ctx *http.Request, tool, action string, ctxRef Contex
 	}
 }
 
+const maxRequestBody = 1 << 20 // 1 MB
+
 func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -140,6 +142,7 @@ func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 		ctx = context.WithValue(ctx, sessionIDKey, sessionID)
 	}
 	r = r.WithContext(ctx)
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req ExecuteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -178,6 +181,7 @@ func (s *Server) handleResolveResource(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req ResolveResourceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)

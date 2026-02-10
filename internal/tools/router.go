@@ -3,14 +3,16 @@ package tools
 import (
 	"errors"
 	"os/exec"
+	"sync"
 )
 
 var ErrNoCLI = errors.New("cli not available")
 
 // Router enforces CLI-first execution with API fallback only if CLI is missing.
 type Router struct {
-	Logs *LogHub
+	Logs     *LogHub
 	Redactor *Redactor
+	logsOnce sync.Once
 }
 
 func NewRouter() *Router {
@@ -28,9 +30,11 @@ func (r *Router) logHub() *LogHub {
 	if r == nil {
 		return nil
 	}
-	if r.Logs == nil {
-		r.Logs = NewLogHub()
-	}
+	r.logsOnce.Do(func() {
+		if r.Logs == nil {
+			r.Logs = NewLogHub()
+		}
+	})
 	return r.Logs
 }
 

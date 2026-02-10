@@ -90,7 +90,7 @@ func TestHelmStatusActivity(t *testing.T) {
 	}
 	defer func() { _ = os.Setenv("PATH", oldPath) }()
 
-	rt := NewRuntime(tools.NewRouter(), tools.NewSandbox(), tools.HTTPClients{})
+	rt := NewRuntime(tools.NewRouter(), &tools.Sandbox{Enforce: false}, tools.HTTPClients{})
 	out, err := HelmStatusActivity(context.Background(), "rel", rt)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -109,7 +109,7 @@ func TestCreateGitPullRequestActivityCLI(t *testing.T) {
 	}
 	defer func() { _ = os.Setenv("PATH", oldPath) }()
 
-	rt := NewRuntime(tools.NewRouter(), tools.NewSandbox(), tools.HTTPClients{})
+	rt := NewRuntime(tools.NewRouter(), &tools.Sandbox{Enforce: false}, tools.HTTPClients{})
 	out, err := CreateGitPullRequestActivity(context.Background(), []byte("{}"), rt)
 	if err != nil {
 		t.Fatalf("err: %v", err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -64,7 +65,9 @@ type ContextService struct {
 	PollInterval     time.Duration
 	SnapshotInterval time.Duration
 	Errs             chan error
+	mu               sync.Mutex
 	lastSnapshot     time.Time
+	wg               sync.WaitGroup
 }
 
 func New() *ContextService {
@@ -90,10 +93,16 @@ func (s *ContextService) Start(ctx context.Context) error {
 		s.SnapshotInterval = 5 * time.Minute
 	}
 	snapshots := make(chan Snapshot, 8)
-	go s.runPollers(ctx, snapshots)
-	go s.runWatchers(ctx, snapshots)
-	go s.ingestLoop(ctx, snapshots)
+	s.wg.Add(3)
+	go func() { defer s.wg.Done(); s.runPollers(ctx, snapshots) }()
+	go func() { defer s.wg.Done(); s.runWatchers(ctx, snapshots) }()
+	go func() { defer s.wg.Done(); s.ingestLoop(ctx, snapshots) }()
 	return nil
+}
+
+// Wait blocks until all goroutines started by Start have exited.
+func (s *ContextService) Wait() {
+	s.wg.Wait()
 }
 
 func (s *ContextService) runPollers(ctx context.Context, out chan<- Snapshot) {
@@ -152,7 +161,10 @@ func (s *ContextService) maybeSnapshot(ctx context.Context, snap Snapshot) {
 		return
 	}
 	now := time.Now().UTC()
-	if !s.lastSnapshot.IsZero() && now.Sub(s.lastSnapshot) < s.SnapshotInterval {
+	s.mu.Lock()
+	last := s.lastSnapshot
+	s.mu.Unlock()
+	if !last.IsZero() && now.Sub(last) < s.SnapshotInterval {
 		return
 	}
 	nodesJSON, err := json.Marshal(snap.Nodes)
@@ -170,7 +182,9 @@ func (s *ContextService) maybeSnapshot(ctx context.Context, snap Snapshot) {
 		}
 	}
 	if _, err := s.SnapshotWriter.InsertContextSnapshot(ctx, "context", nodesJSON, edgesJSON, labelsJSON); err == nil {
+		s.mu.Lock()
 		s.lastSnapshot = now
+		s.mu.Unlock()
 	}
 }
 

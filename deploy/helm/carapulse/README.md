@@ -8,7 +8,7 @@ Deploys Carapulse to Kubernetes.
 - Helm 3.14+
 - PostgreSQL 15 (external)
 - Temporal 1.22+ (external)
-- OPA 0.62+ (external, optional)
+- OPA 1.0+ (external, optional)
 
 ## Installation
 

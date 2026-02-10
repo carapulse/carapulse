@@ -108,8 +108,11 @@ func TestRunTimeoutContext(t *testing.T) {
 	}
 }
 
-func TestDefaultRunSandbox(t *testing.T) {
-	if _, err := runSandbox(context.Background(), []string{"true"}); err != nil {
-		t.Fatalf("err: %v", err)
+func TestDefaultRunSandboxEnforced(t *testing.T) {
+	// NewSandbox() now defaults to Enforce=true, so running without a
+	// container image must return "sandbox required".
+	_, err := runSandbox(context.Background(), []string{"true"})
+	if err == nil || err.Error() != "sandbox required" {
+		t.Fatalf("expected sandbox required, got: %v", err)
 	}
 }

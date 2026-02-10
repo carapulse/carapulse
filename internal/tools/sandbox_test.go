@@ -16,6 +16,21 @@ func TestSandboxRunEmpty(t *testing.T) {
 	}
 }
 
+func TestNewSandboxDefaultsEnforceTrue(t *testing.T) {
+	s := NewSandbox()
+	if !s.Enforce {
+		t.Fatalf("expected Enforce=true by default")
+	}
+}
+
+func TestNewSandboxEnforceBlocksWithoutEnabled(t *testing.T) {
+	s := NewSandbox()
+	_, err := s.Run(context.Background(), []string{"echo", "hi"})
+	if err == nil || err.Error() != "sandbox required" {
+		t.Fatalf("expected sandbox required error, got: %v", err)
+	}
+}
+
 func TestSandboxRunSuccess(t *testing.T) {
 	tmp := t.TempDir()
 	name := "testcmd"
@@ -28,7 +43,7 @@ func TestSandboxRunSuccess(t *testing.T) {
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	s := NewSandbox()
+	s := &Sandbox{Enforce: false}
 	if _, err := s.Run(context.Background(), []string{path}); err != nil {
 		t.Fatalf("err: %v", err)
 	}

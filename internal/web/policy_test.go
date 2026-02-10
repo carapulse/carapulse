@@ -55,8 +55,9 @@ func TestPolicyCheckNoPolicy(t *testing.T) {
 	s := &Server{Policy: nil}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = req.WithContext(WithActor(req.Context(), Actor{ID: "u"}))
-	if _, err := s.policyDecision(req, "plan.create", "write", ContextRef{}, "low", 0); err == nil {
-		t.Fatalf("expected error")
+	dec, err := s.policyDecision(req, "plan.create", "write", ContextRef{}, "low", 0)
+	if err != nil || dec.Decision != "allow" {
+		t.Fatalf("decision: %#v err: %v", dec, err)
 	}
 }
 

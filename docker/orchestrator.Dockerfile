@@ -41,5 +41,7 @@ COPY --from=build /out/orchestrator /usr/local/bin/orchestrator
 USER 10001:10001
 ENV HOME=/home/app
 
+EXPOSE 7233
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 CMD test -f /tmp/healthy || exit 1
 ENTRYPOINT ["/usr/local/bin/orchestrator","-config","/etc/carapulse/config.json"]
 

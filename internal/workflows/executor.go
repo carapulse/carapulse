@@ -38,6 +38,7 @@ type Executor struct {
 	PresignTTL    time.Duration
 	Now           func() time.Time
 	DefaultStatus string
+	StepTimeout   time.Duration
 }
 
 var marshalToolCall = json.Marshal
@@ -58,6 +59,9 @@ func (e *Executor) Run(ctx context.Context) error {
 	}
 	if e.PollInterval <= 0 {
 		e.PollInterval = 2 * time.Second
+	}
+	if e.StepTimeout <= 0 {
+		e.StepTimeout = 5 * time.Minute
 	}
 	for {
 		if err := ctx.Err(); err != nil {
@@ -191,7 +195,13 @@ func (e *Executor) executeStep(ctx context.Context, executionID string, step Pla
 		_ = e.Store.UpdateToolCall(ctx, toolCallID, "failed", inputRef, "")
 		return err
 	}
-	resp, err := e.runTool(ctx, executionID, toolCallID, step.Tool, step.Action, step.Input, ctxRef)
+	stepTimeout := e.StepTimeout
+	if stepTimeout <= 0 {
+		stepTimeout = 5 * time.Minute
+	}
+	stepCtx, cancel := context.WithTimeout(ctx, stepTimeout)
+	defer cancel()
+	resp, err := e.runTool(stepCtx, executionID, toolCallID, step.Tool, step.Action, step.Input, ctxRef)
 	if err != nil {
 		_ = e.Store.UpdateToolCall(ctx, toolCallID, "failed", inputRef, "")
 		return err
@@ -452,17 +462,18 @@ func extractExternalIDsFromText(tool, text string) map[string]any {
 	}
 }
 
+var urlRe = regexp.MustCompile(`https?://[^\s]+`)
+var shaRe = regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
+
 func firstURL(text string) string {
-	re := regexp.MustCompile(`https?://[^\s]+`)
-	if match := re.FindString(text); match != "" {
+	if match := urlRe.FindString(text); match != "" {
 		return match
 	}
 	return ""
 }
 
 func firstSHA(text string) string {
-	re := regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
-	if match := re.FindString(strings.ToLower(text)); match != "" {
+	if match := shaRe.FindString(strings.ToLower(text)); match != "" {
 		return match
 	}
 	return ""

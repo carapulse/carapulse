@@ -9,7 +9,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ctxmodel "carapulse/internal/context"
@@ -18,6 +20,46 @@ import (
 	"carapulse/internal/metrics"
 	"carapulse/internal/policy"
 )
+
+// PaginationMeta carries pagination metadata in list responses.
+type PaginationMeta struct {
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+	Total  int `json:"total"`
+}
+
+// parsePagination extracts limit and offset from query parameters.
+// Defaults: limit=50, max limit=200, offset>=0.
+func parsePagination(r *http.Request) (limit, offset int) {
+	limit = 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	return limit, offset
+}
+
+// paginatedResponse wraps data with pagination metadata.
+func paginatedResponse(w http.ResponseWriter, data json.RawMessage, limit, offset, total int) {
+	resp := map[string]any{
+		"data": data,
+		"pagination": PaginationMeta{
+			Limit:  limit,
+			Offset: offset,
+			Total:  total,
+		},
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
 
 type Server struct {
 	Mux              *http.ServeMux
@@ -43,33 +85,45 @@ type Server struct {
 	EventLoopSources []string
 	SessionRequired  bool
 	FailOpenReads    bool
+	RateLimiter      *RateLimiter
+	eventsOnce       sync.Once
+	logsOnce         sync.Once
 }
 
 var marshalJSON = json.Marshal
 
+const maxRequestBody = 1 << 20 // 1 MB
+
 type DBWriter interface {
 	CreatePlan(ctx context.Context, planJSON []byte) (string, error)
 	GetPlan(ctx context.Context, planID string) ([]byte, error)
+	ListPlans(ctx context.Context, limit, offset int) ([]byte, int, error)
 	CreateExecution(ctx context.Context, planID string) (string, error)
 	GetExecution(ctx context.Context, execID string) ([]byte, error)
+	ListExecutions(ctx context.Context, limit, offset int) ([]byte, int, error)
+	CancelExecution(ctx context.Context, executionID string) error
 	CreateApproval(ctx context.Context, planID string, payload []byte) (string, error)
 	UpdateApprovalStatusByPlan(ctx context.Context, planID, status string) error
-	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, error)
-	ListContextServices(ctx context.Context) ([]byte, error)
-	ListContextSnapshots(ctx context.Context) ([]byte, error)
+	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]byte, int, error)
+	ListContextServices(ctx context.Context, limit, offset int) ([]byte, int, error)
+	ListContextSnapshots(ctx context.Context, limit, offset int) ([]byte, int, error)
 	GetContextSnapshot(ctx context.Context, snapshotID string) ([]byte, error)
 	CreateSchedule(ctx context.Context, payload []byte) (string, error)
-	ListSchedules(ctx context.Context) ([]byte, error)
+	ListSchedules(ctx context.Context, limit, offset int) ([]byte, int, error)
+	DeleteSchedule(ctx context.Context, scheduleID string) error
 	CreatePlaybook(ctx context.Context, payload []byte) (string, error)
-	ListPlaybooks(ctx context.Context) ([]byte, error)
+	ListPlaybooks(ctx context.Context, limit, offset int) ([]byte, int, error)
 	GetPlaybook(ctx context.Context, playbookID string) ([]byte, error)
+	DeletePlaybook(ctx context.Context, playbookID string) error
 	CreateRunbook(ctx context.Context, payload []byte) (string, error)
-	ListRunbooks(ctx context.Context) ([]byte, error)
+	ListRunbooks(ctx context.Context, limit, offset int) ([]byte, int, error)
 	GetRunbook(ctx context.Context, runbookID string) ([]byte, error)
+	DeleteRunbook(ctx context.Context, runbookID string) error
+	DeletePlan(ctx context.Context, planID string) error
 	CreateWorkflowCatalog(ctx context.Context, payload []byte) (string, error)
-	ListWorkflowCatalog(ctx context.Context) ([]byte, error)
+	ListWorkflowCatalog(ctx context.Context, limit, offset int) ([]byte, int, error)
 	CreateSession(ctx context.Context, payload []byte) (string, error)
-	ListSessions(ctx context.Context) ([]byte, error)
+	ListSessions(ctx context.Context, limit, offset int) ([]byte, int, error)
 	GetSession(ctx context.Context, sessionID string) ([]byte, error)
 	UpdateSession(ctx context.Context, sessionID string, payload []byte) error
 	DeleteSession(ctx context.Context, sessionID string) error
@@ -86,6 +140,10 @@ type ExecutionWorkflowUpdater interface {
 	UpdateExecutionWorkflowID(ctx context.Context, executionID, workflowID string) error
 }
 
+type ActiveExecutionChecker interface {
+	HasActiveExecution(ctx context.Context, planID string) (bool, error)
+}
+
 type PlanDetailsProvider interface {
 	ListPlanSteps(ctx context.Context, planID string) ([]byte, error)
 	ListApprovalsByPlan(ctx context.Context, planID string) ([]byte, error)
@@ -97,6 +155,14 @@ type ApprovalStatusReader interface {
 
 type ApprovalTokenReader interface {
 	GetApprovalStatusByToken(ctx context.Context, planID, approvalID string) (string, error)
+}
+
+type ApprovalHashWriter interface {
+	SetApprovalHash(ctx context.Context, planID, hash string) error
+}
+
+type ApprovalHashReader interface {
+	GetApprovalHash(ctx context.Context, planID string) (string, error)
 }
 
 type ApprovalCreator interface {
@@ -137,36 +203,48 @@ func NewServer(database DBWriter, evaluator *policy.Evaluator) *Server {
 	return s
 }
 
+func (s *Server) withRateLimit(h http.Handler) http.Handler {
+	if s.RateLimiter == nil {
+		return h
+	}
+	return RateLimitMiddleware(s.RateLimiter)(h)
+}
+
 func (s *Server) registerRoutes() {
 	s.Mux.HandleFunc("/healthz", s.handleHealthz)
 	s.Mux.HandleFunc("/readyz", s.handleReadyz)
 	s.Mux.Handle("/metrics", metrics.Handler())
 
-	s.Mux.Handle("/v1/plans", AuthMiddleware(http.HandlerFunc(s.handlePlans)))
-	s.Mux.Handle("/v1/plans/", AuthMiddleware(http.HandlerFunc(s.handlePlanByID)))
-	s.Mux.Handle("/v1/approvals", AuthMiddleware(http.HandlerFunc(s.handleApprovals)))
+	// Write endpoints get rate limiting.
+	s.Mux.Handle("/v1/plans", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handlePlans))))
+	s.Mux.Handle("/v1/plans/", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handlePlanByID))))
+	s.Mux.Handle("/v1/approvals", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleApprovals))))
+	s.Mux.Handle("/v1/schedules", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleSchedules))))
+	s.Mux.Handle("/v1/schedules/", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleScheduleByID))))
+	s.Mux.Handle("/v1/context/refresh", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleContextRefresh))))
+	s.Mux.Handle("/v1/playbooks", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handlePlaybooks))))
+	s.Mux.Handle("/v1/runbooks", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleRunbooks))))
+	s.Mux.Handle("/v1/memory", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleOperatorMemory))))
+	s.Mux.Handle("/v1/memory/", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleOperatorMemoryByID))))
+	s.Mux.Handle("/v1/sessions", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleSessions))))
+	s.Mux.Handle("/v1/sessions/", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleSessionByID))))
+	s.Mux.Handle("/v1/workflows", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleWorkflows))))
+	s.Mux.Handle("/v1/workflows/", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleWorkflowByID))))
+	s.Mux.Handle("/v1/hooks/alertmanager", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleHook))))
+	s.Mux.Handle("/v1/hooks/argocd", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleHook))))
+	s.Mux.Handle("/v1/hooks/git", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleHook))))
+	s.Mux.Handle("/v1/hooks/k8s", s.withRateLimit(AuthMiddleware(http.HandlerFunc(s.handleHook))))
+
+	// Read-only endpoints.
 	s.Mux.Handle("/v1/audit/events", AuthMiddleware(http.HandlerFunc(s.handleAuditEvents)))
 	s.Mux.Handle("/v1/context/services", AuthMiddleware(http.HandlerFunc(s.handleContextServices)))
 	s.Mux.Handle("/v1/context/snapshots", AuthMiddleware(http.HandlerFunc(s.handleContextSnapshots)))
 	s.Mux.Handle("/v1/context/snapshots/", AuthMiddleware(http.HandlerFunc(s.handleContextSnapshotByID)))
-	s.Mux.Handle("/v1/context/refresh", AuthMiddleware(http.HandlerFunc(s.handleContextRefresh)))
 	s.Mux.Handle("/v1/context/graph", AuthMiddleware(http.HandlerFunc(s.handleContextGraph)))
-	s.Mux.Handle("/v1/playbooks", AuthMiddleware(http.HandlerFunc(s.handlePlaybooks)))
 	s.Mux.Handle("/v1/playbooks/", AuthMiddleware(http.HandlerFunc(s.handlePlaybookByID)))
-	s.Mux.Handle("/v1/runbooks", AuthMiddleware(http.HandlerFunc(s.handleRunbooks)))
 	s.Mux.Handle("/v1/runbooks/", AuthMiddleware(http.HandlerFunc(s.handleRunbookByID)))
-	s.Mux.Handle("/v1/memory", AuthMiddleware(http.HandlerFunc(s.handleOperatorMemory)))
-	s.Mux.Handle("/v1/memory/", AuthMiddleware(http.HandlerFunc(s.handleOperatorMemoryByID)))
-	s.Mux.Handle("/v1/sessions", AuthMiddleware(http.HandlerFunc(s.handleSessions)))
-	s.Mux.Handle("/v1/sessions/", AuthMiddleware(http.HandlerFunc(s.handleSessionByID)))
-	s.Mux.Handle("/v1/workflows", AuthMiddleware(http.HandlerFunc(s.handleWorkflows)))
-	s.Mux.Handle("/v1/workflows/", AuthMiddleware(http.HandlerFunc(s.handleWorkflowByID)))
-	s.Mux.Handle("/v1/hooks/alertmanager", AuthMiddleware(http.HandlerFunc(s.handleHook)))
-	s.Mux.Handle("/v1/hooks/argocd", AuthMiddleware(http.HandlerFunc(s.handleHook)))
-	s.Mux.Handle("/v1/hooks/git", AuthMiddleware(http.HandlerFunc(s.handleHook)))
-	s.Mux.Handle("/v1/hooks/k8s", AuthMiddleware(http.HandlerFunc(s.handleHook)))
+	s.Mux.Handle("/v1/executions", AuthMiddleware(http.HandlerFunc(s.handleExecutions)))
 	s.Mux.Handle("/v1/executions/", AuthMiddleware(http.HandlerFunc(s.handleExecutionByID)))
-	s.Mux.Handle("/v1/schedules", AuthMiddleware(http.HandlerFunc(s.handleSchedules)))
 	s.Mux.Handle("/v1/ws", AuthMiddleware(http.HandlerFunc(s.handleWS)))
 	s.Mux.Handle("/ui/playbooks", AuthMiddleware(http.HandlerFunc(s.handleUIPlaybooks)))
 	s.Mux.Handle("/ui/runbooks", AuthMiddleware(http.HandlerFunc(s.handleUIRunbooks)))
@@ -174,16 +252,20 @@ func (s *Server) registerRoutes() {
 }
 
 func (s *Server) eventHub() *EventHub {
-	if s.Events == nil {
-		s.Events = NewEventHub()
-	}
+	s.eventsOnce.Do(func() {
+		if s.Events == nil {
+			s.Events = NewEventHub()
+		}
+	})
 	return s.Events
 }
 
 func (s *Server) logHub() *LogHub {
-	if s.Logs == nil {
-		s.Logs = NewLogHub()
-	}
+	s.logsOnce.Do(func() {
+		if s.Logs == nil {
+			s.Logs = NewLogHub()
+		}
+	})
 	return s.Logs
 }
 
@@ -231,6 +313,33 @@ func (s *Server) createApproval(ctx context.Context, planID string, external boo
 func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch r.Method {
+	case http.MethodGet:
+		if s.DB == nil {
+			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+		if tenantID == "" {
+			http.Error(w, "tenant_id required", http.StatusBadRequest)
+			return
+		}
+		if err := policyCheckTenantRead(s, r, "plan.list", tenantID); err != nil {
+			s.auditEvent(r.Context(), "plan.list", "deny", map[string]any{}, err.Error())
+			http.Error(w, "policy denied", http.StatusForbidden)
+			return
+		}
+		limit, offset := parsePagination(r)
+		payload, total, err := s.DB.ListPlans(r.Context(), limit, offset)
+		if err != nil {
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		filtered, err := filterJSONByTenantContext(payload, tenantID)
+		if err != nil {
+			http.Error(w, "encode error", http.StatusInternalServerError)
+			return
+		}
+		paginatedResponse(w, filtered, limit, offset, total)
 	case http.MethodPost:
 		if s.DB == nil {
 			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
@@ -241,6 +350,7 @@ func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "session denied", http.StatusForbidden)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		var req PlanCreateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -251,7 +361,7 @@ func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		if risk != "read" {
 			actionType = "write"
 		}
-		if err := validateContextRefStrict(req.Context); err != nil {
+		if err := validateContextRefMinimal(req.Context); err != nil {
 			s.auditEvent(r.Context(), "plan.create", "deny", req.Context, err.Error())
 			http.Error(w, "invalid context", http.StatusBadRequest)
 			return
@@ -353,6 +463,11 @@ func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "db error", http.StatusInternalServerError)
 					return
 				}
+				if hashWriter, ok := s.DB.(ApprovalHashWriter); ok {
+					approvedSteps, _ := parsePlanStepsPayload(plan["steps"])
+					approvedIntent, _ := plan["intent"].(string)
+					_ = hashWriter.SetApprovalHash(r.Context(), planID, ComputePlanHash(approvedIntent, approvedSteps))
+				}
 				s.auditEvent(r.Context(), "approval.auto", "allow", map[string]any{
 					"plan_id":     planID,
 					"approval_id": approvalID,
@@ -377,7 +492,7 @@ func (s *Server) handlePlans(w http.ResponseWriter, r *http.Request) {
 			"plan_id":    planID,
 			"created_at": createdAt,
 		}
-		_ = json.NewEncoder(w).Encode(resp)
+		writeJSON(w, http.StatusOK, resp)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -415,7 +530,7 @@ func (s *Server) handlePlanByID(w http.ResponseWriter, r *http.Request) {
 			"changes": steps,
 			"targets": estimateTargets(steps),
 		}
-		_ = json.NewEncoder(w).Encode(diff)
+		writeJSON(w, http.StatusOK, diff)
 		return
 	}
 	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/risk") {
@@ -456,7 +571,7 @@ func (s *Server) handlePlanByID(w http.ResponseWriter, r *http.Request) {
 			"blast_radius": blastRadius(ctxRef, targets),
 			"targets":      targets,
 		}
-		_ = json.NewEncoder(w).Encode(out)
+		writeJSON(w, http.StatusOK, out)
 		return
 	}
 	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, ":execute") {
@@ -469,6 +584,7 @@ func (s *Server) handlePlanByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "plan id required", http.StatusBadRequest)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var execReq PlanExecuteRequest
 		if err := json.NewDecoder(r.Body).Decode(&execReq); err != nil && !errors.Is(err, io.EOF) {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -568,6 +684,29 @@ func (s *Server) handlePlanByID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if hashReader, ok := s.DB.(ApprovalHashReader); ok {
+			approvedHash, err := hashReader.GetApprovalHash(r.Context(), planID)
+			if err == nil && approvedHash != "" {
+				intent, _ := plan["intent"].(string)
+				currentHash := ComputePlanHash(intent, steps)
+				if currentHash != approvedHash {
+					s.auditEvent(r.Context(), "plan.execute", "deny", map[string]any{"plan_id": planID}, "plan modified after approval")
+					http.Error(w, "plan modified after approval", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		if checker, ok := s.DB.(ActiveExecutionChecker); ok {
+			active, err := checker.HasActiveExecution(r.Context(), planID)
+			if err != nil {
+				http.Error(w, "db error", http.StatusInternalServerError)
+				return
+			}
+			if active {
+				http.Error(w, "execution already in progress", http.StatusConflict)
+				return
+			}
+		}
 		execID, err := s.DB.CreateExecution(r.Context(), planID)
 		if err != nil {
 			http.Error(w, "db error", http.StatusInternalServerError)
@@ -586,7 +725,7 @@ func (s *Server) handlePlanByID(w http.ResponseWriter, r *http.Request) {
 		}, "")
 		planSession := sessionFromPlan(plan)
 		s.emit("execution.updated", map[string]any{"execution_id": execID, "plan_id": planID}, planSession)
-		_ = json.NewEncoder(w).Encode(map[string]any{"execution_id": execID})
+		writeJSON(w, http.StatusOK, map[string]any{"execution_id": execID})
 		return
 	}
 	if r.Method == http.MethodGet {
@@ -634,6 +773,19 @@ func (s *Server) handlePlanByID(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(plan)
 		return
 	}
+	if r.Method == http.MethodDelete {
+		if s.DB == nil {
+			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		planID := strings.TrimPrefix(r.URL.Path, "/v1/plans/")
+		if err := s.DB.DeletePlan(r.Context(), planID); err != nil {
+			http.Error(w, "delete failed", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	w.WriteHeader(http.StatusMethodNotAllowed)
 }
 
@@ -645,6 +797,7 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		var req ScheduleCreateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -661,7 +814,7 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "cron required", http.StatusBadRequest)
 			return
 		}
-		if err := validateContextRefStrict(req.Context); err != nil {
+		if err := validateContextRefMinimal(req.Context); err != nil {
 			s.auditEvent(r.Context(), "schedule.create", "deny", req.Context, err.Error())
 			http.Error(w, "invalid context", http.StatusBadRequest)
 			return
@@ -701,21 +854,44 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			"schedule_id": id,
 			"summary":     req.Summary,
 		}, "")
-		_ = json.NewEncoder(w).Encode(map[string]any{"schedule_id": id})
+		writeJSON(w, http.StatusOK, map[string]any{"schedule_id": id})
 	case http.MethodGet:
 		if s.DB == nil {
 			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		payload, err := s.DB.ListSchedules(r.Context())
+		limit, offset := parsePagination(r)
+		payload, total, err := s.DB.ListSchedules(r.Context(), limit, offset)
 		if err != nil {
 			http.Error(w, "db error", http.StatusInternalServerError)
 			return
 		}
-		w.Write(payload)
+		paginatedResponse(w, payload, limit, offset, total)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleScheduleByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.DB == nil {
+		http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	scheduleID := strings.TrimPrefix(r.URL.Path, "/v1/schedules/")
+	if strings.TrimSpace(scheduleID) == "" {
+		http.Error(w, "schedule_id required", http.StatusBadRequest)
+		return
+	}
+	if err := s.DB.DeleteSchedule(r.Context(), scheduleID); err != nil {
+		http.Error(w, "delete failed", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
@@ -728,6 +904,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req ApprovalCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -763,13 +940,54 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "db error", http.StatusInternalServerError)
 			return
 		}
+		if status == "approved" {
+			if hashWriter, ok := s.DB.(ApprovalHashWriter); ok {
+				if planPayload, err := s.DB.GetPlan(r.Context(), req.PlanID); err == nil && planPayload != nil {
+					var planData map[string]any
+					if err := json.Unmarshal(planPayload, &planData); err == nil {
+						approvedSteps, _ := parsePlanStepsPayload(planData["steps"])
+						approvedIntent, _ := planData["intent"].(string)
+						_ = hashWriter.SetApprovalHash(r.Context(), req.PlanID, ComputePlanHash(approvedIntent, approvedSteps))
+					}
+				}
+			}
+		}
 	}
 	s.auditEvent(r.Context(), "approval.create", "allow", map[string]any{
 		"plan_id":     req.PlanID,
 		"status":      status,
 		"approval_id": approvalID,
 	}, "")
-	_ = json.NewEncoder(w).Encode(map[string]any{"approval_id": approvalID, "status": status})
+	writeJSON(w, http.StatusOK, map[string]any{"approval_id": approvalID, "status": status})
+}
+
+func (s *Server) handleExecutions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if s.DB == nil {
+		http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		http.Error(w, "tenant_id required", http.StatusBadRequest)
+		return
+	}
+	if err := policyCheckTenantRead(s, r, "execution.list", tenantID); err != nil {
+		s.auditEvent(r.Context(), "execution.list", "deny", map[string]any{}, err.Error())
+		http.Error(w, "policy denied", http.StatusForbidden)
+		return
+	}
+	limit, offset := parsePagination(r)
+	payload, total, err := s.DB.ListExecutions(r.Context(), limit, offset)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	paginatedResponse(w, payload, limit, offset, total)
 }
 
 func (s *Server) handleExecutionByID(w http.ResponseWriter, r *http.Request) {
@@ -830,6 +1048,31 @@ func (s *Server) handleExecutionByID(w http.ResponseWriter, r *http.Request) {
 		w.Write(payload)
 		return
 	}
+	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/cancel") {
+		if s.DB == nil {
+			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		execID := strings.TrimPrefix(strings.TrimSuffix(r.URL.Path, "/cancel"), "/v1/executions/")
+		execID = strings.TrimSuffix(execID, "/")
+		if err := s.policyCheck(r, "execution.cancel", "write", ContextRef{}, "low", 0); err != nil {
+			s.auditEvent(r.Context(), "execution.cancel", "deny", map[string]any{"execution_id": execID}, err.Error())
+			http.Error(w, "policy denied", http.StatusForbidden)
+			return
+		}
+		err := s.DB.CancelExecution(r.Context(), execID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		s.auditEvent(r.Context(), "execution.cancel", "allow", map[string]any{"execution_id": execID}, "")
+		writeJSON(w, http.StatusOK, map[string]any{"execution_id": execID, "status": "cancelled"})
+		return
+	}
 	w.WriteHeader(http.StatusMethodNotAllowed)
 }
 
@@ -848,12 +1091,12 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid query", http.StatusBadRequest)
 		return
 	}
-	payload, err := s.DB.ListAuditEvents(r.Context(), filter)
+	payload, total, err := s.DB.ListAuditEvents(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	w.Write(payload)
+	paginatedResponse(w, payload, filter.Limit, filter.Offset, total)
 }
 
 func (s *Server) handleContextServices(w http.ResponseWriter, r *http.Request) {
@@ -876,7 +1119,8 @@ func (s *Server) handleContextServices(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "policy denied", http.StatusForbidden)
 		return
 	}
-	payload, err := s.DB.ListContextServices(r.Context())
+	limit, offset := parsePagination(r)
+	payload, total, err := s.DB.ListContextServices(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
@@ -887,7 +1131,8 @@ func (s *Server) handleContextServices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items = filterItemsByLabelTenant(items, tenantID, false)
-	_ = json.NewEncoder(w).Encode(items)
+	filtered, _ := json.Marshal(items)
+	paginatedResponse(w, filtered, limit, offset, total)
 }
 
 func (s *Server) handleContextSnapshots(w http.ResponseWriter, r *http.Request) {
@@ -910,7 +1155,8 @@ func (s *Server) handleContextSnapshots(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "policy denied", http.StatusForbidden)
 		return
 	}
-	payload, err := s.DB.ListContextSnapshots(r.Context())
+	limit, offset := parsePagination(r)
+	payload, total, err := s.DB.ListContextSnapshots(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
@@ -921,7 +1167,8 @@ func (s *Server) handleContextSnapshots(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	items = filterItemsByLabelTenant(items, tenantID, false)
-	_ = json.NewEncoder(w).Encode(items)
+	filtered, _ := json.Marshal(items)
+	paginatedResponse(w, filtered, limit, offset, total)
 }
 
 func (s *Server) handleContextRefresh(w http.ResponseWriter, r *http.Request) {
@@ -934,6 +1181,7 @@ func (s *Server) handleContextRefresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "context unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req ContextRefreshRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -960,7 +1208,7 @@ func (s *Server) handleContextRefresh(w http.ResponseWriter, r *http.Request) {
 		"node_count": len(req.Nodes),
 		"edge_count": len(req.Edges),
 	}, "")
-	_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (s *Server) handleContextGraph(w http.ResponseWriter, r *http.Request) {
@@ -988,7 +1236,7 @@ func (s *Server) handleContextGraph(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "context error", http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(graph)
+	writeJSON(w, http.StatusOK, graph)
 }
 
 func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
@@ -1001,6 +1249,7 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session denied", http.StatusForbidden)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -1125,27 +1374,13 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "db error", http.StatusInternalServerError)
 			return
 		}
+		// Webhook-triggered plans always require human approval regardless
+		// of risk level. The risk classification is based on intent keywords
+		// which can be gamed, and LLM-generated plans are not trusted.
 		if actionType == "write" {
-			if risk == "low" && s.AutoApproveLow && dec.Decision != "require_approval" {
-				approvalID, err := s.createApproval(r.Context(), planID, false)
-				if err != nil {
-					http.Error(w, "approval error", http.StatusBadGateway)
-					return
-				}
-				if err := s.DB.UpdateApprovalStatusByPlan(r.Context(), planID, "approved"); err != nil {
-					http.Error(w, "db error", http.StatusInternalServerError)
-					return
-				}
-				s.auditEvent(r.Context(), "approval.auto", "allow", map[string]any{
-					"plan_id":     planID,
-					"approval_id": approvalID,
-					"status":      "approved",
-				}, "")
-			} else {
-				if _, err := s.createApproval(r.Context(), planID, true); err != nil {
-					http.Error(w, "approval error", http.StatusBadGateway)
-					return
-				}
+			if _, err := s.createApproval(r.Context(), planID, true); err != nil {
+				http.Error(w, "approval error", http.StatusBadGateway)
+				return
 			}
 		}
 		s.auditEvent(r.Context(), "plan.create", "allow", map[string]any{
@@ -1178,6 +1413,29 @@ func (s *Server) approvalStatus(ctx context.Context, planID, approvalToken strin
 		return reader.GetApprovalStatus(ctx, planID)
 	}
 	return "", errors.New("approval status unavailable")
+}
+
+// ComputePlanHash computes a SHA-256 hash over the plan's intent and steps.
+// The hash is stored at approval time and verified before execution to detect
+// plan tampering between approval and execution (SEC-01).
+func ComputePlanHash(intent string, steps []PlanStep) string {
+	normalized := make([]PlanStep, len(steps))
+	copy(normalized, steps)
+	for i := range normalized {
+		if strings.TrimSpace(normalized[i].Stage) == "" {
+			normalized[i].Stage = "act"
+		}
+	}
+	canonical := struct {
+		Intent string     `json:"intent"`
+		Steps  []PlanStep `json:"steps"`
+	}{Intent: intent, Steps: normalized}
+	data, err := json.Marshal(canonical)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func hookSummary(source string, payload map[string]any) string {
@@ -1319,5 +1577,6 @@ func parseAuditFilter(r *http.Request) (db.AuditFilter, error) {
 	filter.ActorID = query.Get("actor_id")
 	filter.Action = query.Get("action")
 	filter.Decision = query.Get("decision")
+	filter.Limit, filter.Offset = parsePagination(r)
 	return filter, nil
 }
