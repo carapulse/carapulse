@@ -1188,12 +1188,15 @@ func TestRunAuditListOK(t *testing.T) {
 		if r.URL.Path != "/v1/audit/events" || r.Method != http.MethodGet {
 			t.Fatalf("path: %s method: %s", r.URL.Path, r.Method)
 		}
+		if got := r.Header.Get("X-Tenant-Id"); got != "t1" {
+			t.Fatalf("tenant: %s", got)
+		}
 		_, _ = w.Write([]byte(`[{"event":"plan.create"}]`))
 	}))
 	defer ts.Close()
 
 	var buf bytes.Buffer
-	err := run([]string{"audit", "list", "-gateway", ts.URL}, &buf)
+	err := run([]string{"audit", "list", "-tenant-id", "t1", "-gateway", ts.URL}, &buf)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -1204,8 +1207,8 @@ func TestRunAuditListOK(t *testing.T) {
 
 func TestRunAuditListWithTenantFilter(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("tenant_id"); got != "t1" {
-			t.Fatalf("tenant_id: %s", got)
+		if got := r.Header.Get("X-Tenant-Id"); got != "t1" {
+			t.Fatalf("tenant: %s", got)
 		}
 		_, _ = w.Write([]byte(`[{"event":"plan.create"}]`))
 	}))
@@ -1221,6 +1224,13 @@ func TestRunAuditListWithTenantFilter(t *testing.T) {
 func TestRunAuditListMissingGateway(t *testing.T) {
 	var buf bytes.Buffer
 	if err := run([]string{"audit", "list"}, &buf); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunAuditListMissingTenant(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"audit", "list", "-gateway", "http://example"}, &buf); err == nil {
 		t.Fatalf("expected error")
 	}
 }

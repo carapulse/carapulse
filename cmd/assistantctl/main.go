@@ -759,6 +759,9 @@ func runAuditList(args []string, out io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	if strings.TrimSpace(*tenantID) == "" {
+		return errors.New("tenant-id required")
+	}
 	client, err := gatewayClientFromFlags(*gateway, *token)
 	if err != nil {
 		return err
@@ -956,11 +959,7 @@ func (c *gatewayClient) GetRunbook(ctx context.Context, id string) ([]byte, erro
 }
 
 func (c *gatewayClient) ListAuditEvents(ctx context.Context, tenantID string) ([]byte, error) {
-	path := "/v1/audit/events"
-	if strings.TrimSpace(tenantID) != "" {
-		path += "?tenant_id=" + url.QueryEscape(tenantID)
-	}
-	return c.doRequest(ctx, http.MethodGet, path, nil)
+	return c.doRequestWithTenant(ctx, http.MethodGet, "/v1/audit/events", nil, tenantID)
 }
 
 func (c *gatewayClient) ListContextSnapshots(ctx context.Context, tenantID string) ([]byte, error) {

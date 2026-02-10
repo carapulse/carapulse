@@ -29,6 +29,7 @@ func TestListAuditEventsFilters(t *testing.T) {
 	conn := &fakeConn{row: row}
 	d := &DB{conn: conn}
 	filter := AuditFilter{
+		TenantID: "t",
 		From:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		To:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 		ActorID:  "actor",
@@ -53,8 +54,11 @@ func TestListAuditEventsFilters(t *testing.T) {
 	if !strings.Contains(conn.lastQuery, "decision =") {
 		t.Fatalf("missing decision filter")
 	}
-	if got := len(conn.lastArgs); got != 7 {
-		t.Fatalf("args: got %d, want 7 (5 filters + limit + offset)", got)
+	if !strings.Contains(conn.lastQuery, "context_json") {
+		t.Fatalf("missing tenant filter")
+	}
+	if got := len(conn.lastArgs); got != 8 {
+		t.Fatalf("args: got %d, want 8 (6 filters + limit + offset)", got)
 	}
 }
 

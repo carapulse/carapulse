@@ -1092,6 +1092,17 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid query", http.StatusBadRequest)
 		return
 	}
+	tenantID, err := resolveTenant(filter.TenantID, r.Header.Get("X-Tenant-Id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := policyCheckTenantRead(s, r, "audit.list", tenantID); err != nil {
+		s.auditEvent(r.Context(), "audit.list", "deny", map[string]any{"tenant_id": tenantID}, err.Error())
+		http.Error(w, "policy denied", http.StatusForbidden)
+		return
+	}
+	filter.TenantID = tenantID
 	payload, total, err := s.DB.ListAuditEvents(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
@@ -1561,6 +1572,7 @@ func extractAlertLabels(payload map[string]any) map[string]any {
 func parseAuditFilter(r *http.Request) (db.AuditFilter, error) {
 	query := r.URL.Query()
 	var filter db.AuditFilter
+	filter.TenantID = strings.TrimSpace(query.Get("tenant_id"))
 	if from := query.Get("from"); from != "" {
 		parsed, err := time.Parse(time.RFC3339, from)
 		if err != nil {

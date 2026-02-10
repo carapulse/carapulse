@@ -2447,6 +2447,7 @@ func TestHandleExecutionDBError(t *testing.T) {
 func TestHandleAuditEvents(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/audit/events", nil)
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	req.Header.Set("X-Tenant-Id", "t")
 	w := httptest.NewRecorder()
 	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(server.handleAuditEvents)).ServeHTTP(w, req)
@@ -2458,6 +2459,7 @@ func TestHandleAuditEvents(t *testing.T) {
 func TestHandleAuditEventsQueryParams(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/audit/events?from=2024-01-01T00:00:00Z&to=2024-01-02T00:00:00Z&actor_id=user&action=deploy&decision=allow", nil)
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	req.Header.Set("X-Tenant-Id", "t")
 	w := httptest.NewRecorder()
 	db := &auditTrackingDB{}
 	server := &Server{Mux: http.NewServeMux(), DB: db, Policy: &policy.Evaluator{Checker: allowChecker{}}}
@@ -2465,7 +2467,7 @@ func TestHandleAuditEventsQueryParams(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: %d", w.Code)
 	}
-	if db.filter.ActorID != "user" || db.filter.Action != "deploy" || db.filter.Decision != "allow" {
+	if db.filter.TenantID != "t" || db.filter.ActorID != "user" || db.filter.Action != "deploy" || db.filter.Decision != "allow" {
 		t.Fatalf("filter: %#v", db.filter)
 	}
 }
@@ -2473,6 +2475,7 @@ func TestHandleAuditEventsQueryParams(t *testing.T) {
 func TestHandleAuditEventsInvalidQuery(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/audit/events?from=bad", nil)
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	req.Header.Set("X-Tenant-Id", "t")
 	w := httptest.NewRecorder()
 	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(server.handleAuditEvents)).ServeHTTP(w, req)
@@ -2484,6 +2487,7 @@ func TestHandleAuditEventsInvalidQuery(t *testing.T) {
 func TestHandleAuditEventsInvalidTo(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/audit/events?to=bad", nil)
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	req.Header.Set("X-Tenant-Id", "t")
 	w := httptest.NewRecorder()
 	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(server.handleAuditEvents)).ServeHTTP(w, req)
@@ -2495,6 +2499,7 @@ func TestHandleAuditEventsInvalidTo(t *testing.T) {
 func TestHandleAuditEventsDBUnavailable(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/audit/events", nil)
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	req.Header.Set("X-Tenant-Id", "t")
 	w := httptest.NewRecorder()
 	server := &Server{Mux: http.NewServeMux(), DB: nil}
 	AuthMiddleware(http.HandlerFunc(server.handleAuditEvents)).ServeHTTP(w, req)
@@ -2506,6 +2511,7 @@ func TestHandleAuditEventsDBUnavailable(t *testing.T) {
 func TestHandleAuditEventsDBError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/audit/events", nil)
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	req.Header.Set("X-Tenant-Id", "t")
 	w := httptest.NewRecorder()
 	server := &Server{Mux: http.NewServeMux(), DB: errorDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(server.handleAuditEvents)).ServeHTTP(w, req)
@@ -2517,10 +2523,22 @@ func TestHandleAuditEventsDBError(t *testing.T) {
 func TestHandleAuditEventsMethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/audit/events", nil)
 	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	req.Header.Set("X-Tenant-Id", "t")
 	w := httptest.NewRecorder()
 	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
 	AuthMiddleware(http.HandlerFunc(server.handleAuditEvents)).ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status: %d", w.Code)
+	}
+}
+
+func TestHandleAuditEventsMissingTenant(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/audit/events", nil)
+	req.Header.Set("Authorization", "Bearer aaa.eyJzdWIiOiJ1IiwiZW1haWwiOiJ1QGV4YW1wbGUuY29tIiwiZ3JvdXBzIjpbInNyZSJdfQ.bbb")
+	w := httptest.NewRecorder()
+	server := &Server{Mux: http.NewServeMux(), DB: &fakeDB{}, Policy: &policy.Evaluator{Checker: allowChecker{}}}
+	AuthMiddleware(http.HandlerFunc(server.handleAuditEvents)).ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status: %d", w.Code)
 	}
 }

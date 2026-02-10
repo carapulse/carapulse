@@ -8,6 +8,7 @@ import (
 )
 
 type AuditFilter struct {
+	TenantID string
 	From     time.Time
 	To       time.Time
 	ActorID  string
@@ -22,6 +23,13 @@ func (d *DB) ListAuditEvents(ctx context.Context, filter AuditFilter) ([]byte, i
 	where := []string{}
 	args := []any{}
 	arg := 1
+	if filter.TenantID != "" {
+		// Support both: audit context is a ContextRef (tenant_id at root), or a wrapper map
+		// with nested "context" (plan.create etc), or alert labels.
+		where = append(where, fmt.Sprintf("(context_json->>'tenant_id' = $%d OR context_json->'context'->>'tenant_id' = $%d OR context_json->'labels'->>'tenant_id' = $%d)", arg, arg, arg))
+		args = append(args, filter.TenantID)
+		arg++
+	}
 	if !filter.From.IsZero() {
 		where = append(where, fmt.Sprintf("occurred_at >= $%d", arg))
 		args = append(args, filter.From)
