@@ -3,7 +3,7 @@ module carapulse
 go 1.23.0
 
 require (
-	github.com/lib/pq v1.11.1
+	github.com/lib/pq v1.11.2
 	github.com/nexus-rpc/sdk-go v0.5.1
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.23.2
